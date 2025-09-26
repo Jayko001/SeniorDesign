@@ -19,6 +19,9 @@ All tasks
 
 - [ ] Design the database schema
 - [ ] Research and select the right LLM model for the application.
-- [ ] Develop the "context engine" for processing and managing data sources, user inputs, and LLM interactions.
+- [ ] Build the context ingestion layer: connect to data sources, parse/normalize schemas + sample rows, and store structured metadata for retrieval.
+- [ ] Implement the LLM interaction core
 - [ ] Develop test suite for unit and integration tests and end-to-end tests.
 - [ ] Write documentation for the extension, including setup instructions and usage guidelines.
+- [ ] Document quickstart, troubleshooting, and architecture ADRs for users 
+- [ ] Create a sample dataset + two demo pipeline (ingest→transform→load) for end-to-end testing.
