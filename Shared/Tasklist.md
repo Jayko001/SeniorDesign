@@ -7,20 +7,16 @@ Dhiren
 - [ ] Implement client-side logic to capture data sources and user inputs.
 
 Kaus
+- [ ] Implement the LLM interaction core
+- [ ] Research and select the right LLM model for the application.
+- [ ] Write documentation for the extension, including setup instructions and usage guidelines.
+- [ ] Build the context ingestion layer: connect to data sources, parse/normalize schemas + sample rows, and store structured metadata for retrieval.
+- [ ] Develop test suite for unit and integration tests and end-to-end tests.
 
 
 Jay
 - [ ] Research most common data sources, integrations, and tools used by data engineers.
 - [ ] Develop the "deploy engine" for deploying the pipeline to user's environment.
-
-
-
-All tasks
-- [ ] Develop the initial scaffolding for the VS code extension.
 - [ ] Design the database schema
-- [ ] Research and select the right LLM model for the application.
-- [ ] Build the context ingestion layer: connect to data sources, parse/normalize schemas + sample rows, and store structured metadata for retrieval.
-- [ ] Implement the LLM interaction core
-- [ ] Develop test suite for unit and integration tests and end-to-end tests.
-- [ ] Write documentation for the extension, including setup instructions and usage guidelines.
 - [ ] Create a sample dataset + two demo pipeline (ingest→transform→load) for end-to-end testing.
+
