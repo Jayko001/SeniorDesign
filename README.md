@@ -39,6 +39,7 @@ Datagrep: an AI assistant that converts plain-English analyst requests into data
 ## Project Description (Assignment #2)
 
 We are creating an AI agent to create data pipelines for non-technical users.
+
 ---
 
 ## User Stories and Design Diagrams (Assignment #4)
