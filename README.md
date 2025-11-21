@@ -13,10 +13,10 @@ This repository contains the final design report for our Senior Design project.
   - [Task List](#task-list)
   - [Timeline](#timeline)
   - [Effort Matrix](#effort-matrix)
-- [ABET Concerns Essay (Assignment #7)](#abet-concerns-essay-assignment-7)
-- [PPT Slideshow (Assignment #8)](#ppt-slideshow-includes-abet-concerns-assignment-8)
-- [Self-Assessment Essays (Assignment #3)](#self-assessment-essays-assignment-3)
-- [Professional Biographies (Assignment #1)](#professional-biographies-assignment-1)
+- [ABET Concerns Essay (Assignment #7)](#abet-concerns-essay)
+- [PPT Slideshow (Assignment #8)](#ppt-slideshow)
+- [Self-Assessment Essays (Assignment #3)](#self-assessment-essays)
+- [Professional Biographies (Assignment #1)](#professional-biographies)
 - [Budget](#budget)
   - [Expenses to Date / Statement](#expenses-to-date--statement)
   - [Donated Items & Values](#donated-items--values)
@@ -62,25 +62,25 @@ We are creating an AI agent to create data pipelines for non-technical users.
 
 ### Task List
 
-- [Task List](./Shared/Tasklist.md)
+- [Task List](HW_assignments/Shared/Tasklist.md)
 
 ### Timeline
-- [Link](./Shared/Milestone.png)
+- [Link](HW_assignments/Shared/Milestone.png)
 
 ### Effort Matrix
--  [Link](./Shared/effort_matrix.md)
+-  [Link](HW_assignments/Shared/effort_matrix.md)
 
 ---
 
 ## ABET Concerns Essay
 
-- [Link](./Shared/Assignment7.pdf)
+- [Link](HW_assignments/Shared/Assignment7.pdf)
 
 ---
 
 ## PPT Slideshow 
 
-- [Link](./Shared/Assignment8.pdf)
+- [Link](HW_assignments/Shared/Assignment8.pdf)
 
 ---
 
@@ -88,18 +88,18 @@ We are creating an AI agent to create data pipelines for non-technical users.
 
 Each member's self-assessment goes here or linked files.
 
-- [Kaaustaaub Shankar](./Kaus/Assignment3.md)
-- [Jay Kothari](./Jay/assignment3.md)
-- [Dhiren Mahajan](./Dhiren/Assignment3_individual.md)
+- [Kaaustaaub Shankar](HW_assignments/Kaus/Assignment_3_for_SeniorDesign.pdf)
+- [Jay Kothari](HW_assignments/Jay/assignment3.md)
+- [Dhiren Mahajan](HW_assignments/Dhiren/Assignment3_individual.md)
 ---
 
 ## Professional Biographies 
 
 Short bios for each team member (education, role, relevant skills).
 
-- [Kaaustaaub Shankar](./Kaus/Assignment1.md)
-- [Jay Kothari](./Jay/Assignment1.md)
-- [Dhiren Mahajan](./Jay/Assignment1.md)
+- [Kaaustaaub Shankar](HW_assignments/Kaus/Assignment1.md)
+- [Jay Kothari](HW_assignments/Jay/Assignment1.md)
+- [Dhiren Mahajan](HW_assignments/Dhiren/Assignment1.md)
 
 ---
 
