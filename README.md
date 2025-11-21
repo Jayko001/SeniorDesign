@@ -27,7 +27,7 @@ This repository is the consolidated Fall design report for Datagrep, our AI agen
 
 **Team:** Kaaustaaub Shankar, Dhiren Mahajan, Jay Kothari  
 **Advisor:** Bo Brunton (Pantomath)  
-**Abstract (<=400 chars):** Datagrep is an AI assistant that converts natural-language analytics requests into end-to-end pipelines. It discovers sources, infers schemas, designs joins/filters, scaffolds tests and deployment, and tracks lineage so analysts get auditable, repeatable pipelines in minutes instead of weeks.
+**Abstract:** Datagrep is an AI assistant that converts natural-language analytics requests into end-to-end pipelines. It discovers sources, infers schemas, designs joins/filters, scaffolds tests and deployment, and tracks lineage so analysts get auditable, repeatable pipelines in minutes instead of weeks.
 
 ---
 
