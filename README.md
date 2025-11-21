@@ -1,7 +1,6 @@
 # Senior Design — Final Fall Design Report
 
-This repository contains the final design report for our Senior Design project. Use the Table of Contents below to navigate and replace the placeholder text and links with your team's final deliverables.
-
+This repository contains the final design report for our Senior Design project. 
 ## Table of Contents
 
 - [Team & Project Abstract](#team--project-abstract)
@@ -15,7 +14,7 @@ This repository contains the final design report for our Senior Design project. 
   - [Timeline](#timeline)
   - [Effort Matrix](#effort-matrix)
 - [ABET Concerns Essay (Assignment #7)](#abet-concerns-essay-assignment-7)
-- [PPT Slideshow (includes ABET Concerns) (Assignment #8)](#ppt-slideshow-includes-abet-concerns-assignment-8)
+- [PPT Slideshow (Assignment #8)](#ppt-slideshow-includes-abet-concerns-assignment-8)
 - [Self-Assessment Essays (Assignment #3)](#self-assessment-essays-assignment-3)
 - [Professional Biographies (Assignment #1)](#professional-biographies-assignment-1)
 - [Budget](#budget)
@@ -50,8 +49,6 @@ We are creating an AI agent to create data pipelines for non-technical users.
 
 ### Design Diagrams: Level 0, 1 and 2
 
-Include your Level 0, Level 1, and Level 2 diagrams (images or embedded SVGs).
-
 - Level 0 diagram: ![d0](./Design_Diagrams/D0.png)
 - Level 1 diagram: ![d1](./Design_Diagrams/D1.png)
 - Level 2 diagram: ![d2](./Design_Diagrams/D2.png)
@@ -65,37 +62,29 @@ Include your Level 0, Level 1, and Level 2 diagrams (images or embedded SVGs).
 
 ### Task List
 
-- Link: [Task List placeholder](./Shared/Tasklist.md)
+- [Task List](./Shared/Tasklist.md)
 
 ### Timeline
-
-Insert Gantt chart or timeline image / table.
-
-- Link: [Timeline placeholder](./Shared/Milestone.png)
+- [Link](./Shared/Milestone.png)
 
 ### Effort Matrix
-
-Show hours per member per task (used to justify 45 hours each).
-
-- Link: [Effort Matrix placeholder](./Shared/effort_matrix.md)
+-  [Link](./Shared/effort_matrix.md)
 
 ---
 
 ## ABET Concerns Essay
 
-- Link: [ABET Essay placeholder](./Shared/Assignment7.pdf)
+- [Link](./Shared/Assignment7.pdf)
 
 ---
 
-## PPT Slideshow (includes ABET Concerns) (Assignment #8)
+## PPT Slideshow 
 
-Attach or link the final slideshow (PDF or PPTX).
-
-- Link: [Slideshow placeholder](./Shared/Assignment8.pdf)
+- [Link](./Shared/Assignment8.pdf)
 
 ---
 
-## Self-Assessment Essays (Assignment #3)
+## Self-Assessment Essays 
 
 Each member's self-assessment goes here or linked files.
 
@@ -104,7 +93,7 @@ Each member's self-assessment goes here or linked files.
 - [Dhiren Mahajan](./Dhiren/Assignment3_individual.md)
 ---
 
-## Professional Biographies (Assignment #1)
+## Professional Biographies 
 
 Short bios for each team member (education, role, relevant skills).
 
@@ -131,12 +120,5 @@ None as of now
 - References and citations
 - Meeting notes: link or folder `./meetings/`
 - Evidence justifying 45 hours/member: timesheets, task logs, commit history
-
----
-
-## How to edit
-
-- Replace placeholder links with actual files or anchors.
-- For headings, Markdown automatic anchors follow this pattern: lowercase, spaces → `-`, remove punctuation (e.g., `## Project Description (Assignment #2)` → `#project-description-assignment-2`).
 
 
