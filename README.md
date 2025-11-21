@@ -111,7 +111,21 @@ Datagrep helps non-technical stakeholders and data teams generate and maintain p
 
 ## Appendix
 
-- References and citations  
-- Meeting notes: link or folder `./meetings/`  
-- Evidence justifying 45 hours/member: timesheets, task logs, commit history
+### Summary of Hours and Justification
 
+Jay:
+- Coming up with project ideas and initial project design: **3 hours**  
+* Finding team and advisor: **2 hours**
+- Researching project-related technologies/tools: **4 hours**  
+* Market research and finding a project focus: **5 hours**
+- Working on Final Design Report : **5 hours**
+- Meetings (incl. overages) ( 2hr/week * 12 weeks ): **28 hours**
+- Professional Biography: **1 hour**
+Kaaustaaub:
+- Coming up with project ideas and initial project design: **3 hours**  
+* Finding team and advisor: **2 hours**
+- Researching project-related technologies/tools: **4 hours**  
+* Finding the right model and designing the orchestrator: **8 hours**
+- Working on Final Design Report : **5 hours**
+- Meetings (incl. overages) ( 2hr/week * 12 weeks ): **28 hours**
+- Professional Biography: **1 hour
