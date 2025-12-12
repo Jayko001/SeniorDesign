@@ -335,6 +335,46 @@ def handle_file_shared(event, say):
         say(f"Error processing file: {str(e)}")
 
 
+@app.event("assistant_thread_started")
+def handle_assistant_thread_started(event):
+    """
+    Handle when a new assistant thread is started (AI chat interface)
+    This event fires when users open the split view AI chat
+    """
+    thread_id = event.get("thread_id")
+    user_id = event.get("user")
+    
+    # You can optionally send a welcome message or set up context here
+    # For now, we'll let the normal message handlers deal with it
+    print(f"Assistant thread started: {thread_id} by user {user_id}")
+
+
+def get_suggested_prompts() -> list:
+    """
+    Generate suggested prompts for the AI assistant interface
+    This can be called dynamically or configured as fixed prompts in Slack settings
+    Returns a list of prompt suggestions
+    """
+    return [
+        {
+            "text": "Generate pipeline: Calculate average salary by department",
+            "description": "Create a pipeline that groups data by department and calculates average salary"
+        },
+        {
+            "text": "Infer schema from CSV file",
+            "description": "Analyze the structure and columns of a CSV file"
+        },
+        {
+            "text": "Generate pipeline: Filter rows where age > 25",
+            "description": "Create a pipeline to filter data based on conditions"
+        },
+        {
+            "text": "Generate pipeline: Join two data sources",
+            "description": "Create a pipeline to combine data from multiple sources"
+        }
+    ]
+
+
 def main():
     """Start the Slack bot"""
     handler = SocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN"))
