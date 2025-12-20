@@ -54,7 +54,7 @@ def run_async(coro):
         # No event loop, create new one
         return asyncio.run(coro)
 
-
+# TODO: add SQL
 def format_code_block(code: str, language: str = "python") -> str:
     """Format code as a Slack code block"""
     return f"```{language}\n{code}\n```"
@@ -303,7 +303,7 @@ async def handle_pipeline_generation(say, description: str, csv_file_path: str):
         say(f"Error generating pipeline: {str(e)}")
         raise
 
-
+# TODO: respond in thread
 def handle_schema_inference(say, csv_file_path: str):
     """Handle schema inference request"""
     try:
