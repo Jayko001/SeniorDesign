@@ -1,10 +1,6 @@
 ```mermaid
 erDiagram
 
-    USERS {
-        int user_id PK
-    }
-
     PRODUCTS {
         int product_id PK
         datetime created_at
@@ -14,7 +10,7 @@ erDiagram
     WEBSITE_SESSIONS {
         int website_session_id PK
         datetime created_at
-        int user_id FK
+        int user_id
         boolean is_repeat_session
         string utm_source
         string utm_campaign
@@ -34,7 +30,7 @@ erDiagram
         int order_id PK
         datetime created_at
         int website_session_id FK
-        int user_id FK
+        int user_id
         int primary_product_id FK
         int items_purchased
         float price_usd
@@ -59,11 +55,7 @@ erDiagram
         float refund_amount_usd
     }
 
-    %% === Key-based relationships ===
-
-    USERS ||--o{ WEBSITE_SESSIONS : user_id
-    USERS ||--o{ ORDERS : user_id
-
+    %% === FK-based relationships ===
     WEBSITE_SESSIONS ||--o{ WEBSITE_PAGEVIEWS : website_session_id
     WEBSITE_SESSIONS ||--o| ORDERS : website_session_id
 
@@ -75,4 +67,6 @@ erDiagram
 
     ORDER_ITEMS ||--o{ ORDER_ITEM_REFUNDS : order_item_id
 
+    %% === Logical (non-FK) relationships ===
+    WEBSITE_SESSIONS }o--|| ORDERS : user_id
 ```
