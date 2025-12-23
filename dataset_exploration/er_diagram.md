@@ -1,14 +1,14 @@
 ```mermaid
 erDiagram
 
+    USERS {
+        int user_id PK
+    }
+
     PRODUCTS {
         int product_id PK
         datetime created_at
         string product_name
-    }
-
-    USERS {
-        int user_id PK
     }
 
     WEBSITE_SESSIONS {
@@ -59,18 +59,20 @@ erDiagram
         float refund_amount_usd
     }
 
-    %% Relationships
-    USERS ||--o{ WEBSITE_SESSIONS : has
-    USERS ||--o{ ORDERS : places
+    %% === Key-based relationships ===
 
-    WEBSITE_SESSIONS ||--o{ WEBSITE_PAGEVIEWS : generates
-    WEBSITE_SESSIONS ||--o| ORDERS : converts_to
+    USERS ||--o{ WEBSITE_SESSIONS : user_id
+    USERS ||--o{ ORDERS : user_id
 
-    ORDERS ||--o{ ORDER_ITEMS : contains
-    PRODUCTS ||--o{ ORDER_ITEMS : sold_as
+    WEBSITE_SESSIONS ||--o{ WEBSITE_PAGEVIEWS : website_session_id
+    WEBSITE_SESSIONS ||--o| ORDERS : website_session_id
 
-    PRODUCTS ||--o{ ORDERS : primary_product
+    PRODUCTS ||--o{ ORDERS : primary_product_id
+    PRODUCTS ||--o{ ORDER_ITEMS : product_id
 
-    ORDER_ITEMS ||--o{ ORDER_ITEM_REFUNDS : refunded_as
-    ORDERS ||--o{ ORDER_ITEM_REFUNDS : has
+    ORDERS ||--o{ ORDER_ITEMS : order_id
+    ORDERS ||--o{ ORDER_ITEM_REFUNDS : order_id
+
+    ORDER_ITEMS ||--o{ ORDER_ITEM_REFUNDS : order_item_id
+
 ```
