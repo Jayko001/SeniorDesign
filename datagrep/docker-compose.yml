@@ -17,6 +17,26 @@ services:
     restart: unless-stopped
     depends_on:
       - db
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  slack-bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - DATAGREP_API_URL=http://backend:8000
+    volumes:
+      - ./backend:/app
+      - /tmp:/tmp
+    restart: unless-stopped
+    depends_on:
+      - backend
+    command: ["python", "slack_bot.py"]
 
   frontend:
     build:

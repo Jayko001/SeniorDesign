@@ -18,12 +18,17 @@ cat > .env << EOF
 OPENAI_API_KEY=sk-your-actual-key-here
 SUPABASE_URL=your_supabase_url_here
 SUPABASE_KEY=your_supabase_key_here
+
+# Slack Bot (optional - only needed if running slack-bot service)
+SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
+SLACK_APP_TOKEN=xapp-your-slack-app-token
 EOF
 ```
 
 Or manually create `.env` in the root directory with:
 ```
 OPENAI_API_KEY=sk-your-actual-key-here
+# Add Slack tokens if using the slack-bot service
 ```
 
 **Note:** The `.env` file should be in the same directory as `docker-compose.yml`, not in the `backend/` folder.
@@ -38,6 +43,18 @@ This will:
 - Build and start the backend API (port 8000)
 - Build and start the frontend (port 3000)
 - Start a PostgreSQL database (port 5432)
+- Start the Slack bot service (if `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` are in `.env`)
+
+**Note:** If you don't want to run the Slack bot, simply omit `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` from your `.env` file. The service will start but won't be able to connect to Slack.
+
+To start only specific services:
+```bash
+# Start everything except Slack bot
+docker-compose up backend frontend db
+
+# Or use profiles (requires docker-compose 1.28+)
+docker-compose --profile slack up
+```
 
 ### 4. Access the Application
 
