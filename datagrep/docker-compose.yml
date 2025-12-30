@@ -11,12 +11,21 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=datagrep
+      - POSTGRES_USER=datagrep
+      - POSTGRES_PASSWORD=datagrep_dev
     volumes:
       - ./backend:/app
       - /tmp:/tmp
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for code execution
     restart: unless-stopped
     depends_on:
       - db
+      - sandbox-builder
+    networks:
+      - datagrep-network
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   slack-bot:
@@ -30,12 +39,21 @@ services:
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
       - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
       - DATAGREP_API_URL=http://backend:8000
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=datagrep
+      - POSTGRES_USER=datagrep
+      - POSTGRES_PASSWORD=datagrep_dev
     volumes:
       - ./backend:/app
       - /tmp:/tmp
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for code execution
     restart: unless-stopped
     depends_on:
       - backend
+      - sandbox-builder
+    networks:
+      - datagrep-network
     command: ["python", "slack_bot.py"]
 
   frontend:
@@ -66,6 +84,21 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    networks:
+      - datagrep-network
+
+  sandbox-builder:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.sandbox
+    image: datagrep-sandbox:latest
+    command: ["echo", "Sandbox image built"]
+    networks:
+      - datagrep-network
+
+networks:
+  datagrep-network:
+    driver: bridge
 
 volumes:
   postgres_data:

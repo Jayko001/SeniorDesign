@@ -17,6 +17,7 @@ import requests
 
 from services.schema_inference import infer_schema_csv
 from services.pipeline_generator import generate_pipeline
+from services.code_executor import execute_python_code
 
 load_dotenv()
 
@@ -88,7 +89,8 @@ def handle_help(message, say):
     """Show help message"""
     help_text = """*Datagrep Slack Bot Commands:*
 
-• `@datagrep generate pipeline: <description>` - Generate a data pipeline from natural language
+• `@datagrep generate pipeline: <description>` - Generate a data pipeline from natural language (auto-executes)
+• `@datagrep generate pipeline: <description> no execute` - Generate pipeline without executing
 • `@datagrep infer schema: <file>` - Infer schema from uploaded CSV file
 • `@datagrep help` - Show this help message
 
@@ -97,7 +99,9 @@ def handle_help(message, say):
 • Upload a CSV file and mention @datagrep with "infer schema"
 • `@datagrep generate pipeline: Calculate average salary by department from employees.csv`
 
-*Note:* For CSV files, upload the file first, then reference it in your request.
+*Note:* 
+- For CSV files, upload the file first, then reference it in your request
+- Pipelines are automatically executed after generation unless you specify "no execute"
 """
     say(help_text)
 
@@ -220,6 +224,15 @@ def handle_message(message, say):
             return
     
     # Parse command
+    if "execute" in cleaned_text and ("pipeline" in cleaned_text or "code" in cleaned_text):
+        # Manual execution command - will need code from previous generation
+        # For now, we'll require a file to be present
+        if csv_file_path:
+            say("To execute a pipeline, first generate one with `generate pipeline: <description>`. Execution happens automatically after generation.")
+        else:
+            say("Please upload a CSV file and generate a pipeline first. Execution happens automatically after generation.")
+        return
+    
     if "generate pipeline" in cleaned_text or "create pipeline" in cleaned_text:
         # Extract natural language description
         desc_start = cleaned_text.find(":") + 1 if ":" in cleaned_text else len(cleaned_text)
@@ -232,7 +245,9 @@ def handle_message(message, say):
         if csv_file_path:
             # Generate pipeline from CSV
             try:
-                run_async(handle_pipeline_generation(say, description, csv_file_path))
+                # Check if user wants to skip execution
+                auto_execute = "no execute" not in cleaned_text.lower() and "skip execute" not in cleaned_text.lower()
+                run_async(handle_pipeline_generation(say, description, csv_file_path, auto_execute=auto_execute))
             except Exception as e:
                 say(f"Error generating pipeline: {str(e)}")
             finally:
@@ -257,7 +272,7 @@ def handle_message(message, say):
         # Default: try to generate pipeline if CSV is uploaded
         if csv_file_path:
             try:
-                run_async(handle_pipeline_generation(say, cleaned_text, csv_file_path))
+                run_async(handle_pipeline_generation(say, cleaned_text, csv_file_path, auto_execute=True))
             except Exception as e:
                 say(f"Error: {str(e)}")
             finally:
@@ -267,7 +282,7 @@ def handle_message(message, say):
             say("I didn't understand that. Type `help` for available commands.")
 
 
-async def handle_pipeline_generation(say, description: str, csv_file_path: str):
+async def handle_pipeline_generation(say, description: str, csv_file_path: str, auto_execute: bool = True):
     """Handle pipeline generation request"""
     try:
         # Infer schema first
@@ -298,6 +313,51 @@ async def handle_pipeline_generation(say, description: str, csv_file_path: str):
             response_parts.append(f"\n*Dependencies:* `{', '.join(pipeline['dependencies'])}`")
         
         say("\n".join(response_parts))
+        
+        # Auto-execute if requested
+        if auto_execute and pipeline.get("code"):
+            say("Executing pipeline... :hourglass_flowing_sand:")
+            try:
+                execution_result = await execute_python_code(
+                    code=pipeline.get("code", ""),
+                    file_paths=[csv_file_path],
+                    db_config=None,
+                    timeout=60
+                )
+                
+                # Format execution results
+                exec_parts = [f"\n*Execution Results* :white_check_mark:"]
+                
+                if execution_result["status"] == "success":
+                    exec_parts.append(f"*Status:* Success ({execution_result['execution_time']}s)")
+                    if execution_result.get("output"):
+                        output = execution_result["output"]
+                        # Truncate long outputs for Slack
+                        if len(output) > 1500:
+                            output = output[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                    if execution_result.get("result_data"):
+                        result_json = json.dumps(execution_result["result_data"], indent=2)
+                        if len(result_json) > 1500:
+                            result_json = result_json[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
+                else:
+                    exec_parts.append(f"*Status:* Error ({execution_result['execution_time']}s)")
+                    if execution_result.get("error"):
+                        error = execution_result["error"]
+                        if len(error) > 1500:
+                            error = error[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
+                    if execution_result.get("output"):
+                        output = execution_result["output"]
+                        if len(output) > 500:
+                            output = output[:500] + "\n... (truncated)"
+                        exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                
+                say("\n".join(exec_parts))
+            
+            except Exception as e:
+                say(f"*Execution Error:* {str(e)}")
     
     except Exception as e:
         say(f"Error generating pipeline: {str(e)}")
@@ -315,8 +375,19 @@ def handle_schema_inference(say, csv_file_path: str):
         raise
 
 
-# Note: app_mention events are handled by the message handler above
-# which checks for bot mentions. We don't need a separate handler here.
+@app.event("app_mention")
+def handle_app_mention_events(event, say):
+    """Handle app_mention events (when bot is mentioned in a channel)"""
+    # Convert app_mention event to message-like format for existing handler
+    message = {
+        "text": event.get("text", ""),
+        "user": event.get("user"),
+        "channel": event.get("channel"),
+        "bot_id": None,  # Not a bot message
+        "files": event.get("files", [])
+    }
+    # Use the existing message handler logic
+    handle_message(message, say)
 
 
 @app.event("file_shared")

@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from services.schema_inference import infer_schema_csv, infer_schema_postgres
 from services.pipeline_generator import generate_pipeline
 from services.supabase_client import get_supabase_client
+from services.code_executor import execute_python_code
 
 load_dotenv()
 
@@ -42,6 +43,14 @@ class SchemaRequest(BaseModel):
     """Request model for schema inference"""
     source_type: str  # "csv" or "postgres"
     source_config: Dict[str, Any]
+
+
+class ExecuteRequest(BaseModel):
+    """Request model for code execution"""
+    code: str
+    file_paths: Optional[List[str]] = None  # CSV files to mount
+    db_config: Optional[Dict[str, Any]] = None  # PostgreSQL connection config
+    timeout: Optional[int] = 60  # Execution timeout in seconds
 
 
 @app.get("/")
@@ -175,6 +184,139 @@ async def generate_pipeline_csv(
         
         return {
             "pipeline": pipeline,
+            "source_type": source_type,
+            "schema": schema
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Clean up temp file
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+
+@app.post("/api/pipeline/execute")
+async def execute_pipeline(request: ExecuteRequest):
+    """
+    Execute Python pipeline code in a sandbox environment
+    """
+    try:
+        result = await execute_python_code(
+            code=request.code,
+            file_paths=request.file_paths,
+            db_config=request.db_config,
+            timeout=request.timeout
+        )
+        
+        return {
+            "status": result["status"],
+            "output": result["output"],
+            "error": result.get("error"),
+            "execution_time": result["execution_time"],
+            "result_data": result.get("result_data")
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/pipeline/generate-and-execute")
+async def generate_and_execute_pipeline(request: PipelineRequest):
+    """
+    Generate pipeline from natural language and execute it immediately
+    """
+    temp_path = None
+    try:
+        # First, infer schema
+        schema = None
+        file_paths = []
+        
+        if request.source_type == "csv":
+            file_path = request.source_config.get("file_path")
+            if not file_path or not os.path.exists(file_path):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"CSV file not found: {file_path}"
+                )
+            schema = infer_schema_csv(request.source_config)
+            file_paths = [file_path]
+        elif request.source_type == "postgres":
+            schema = infer_schema_postgres(request.source_config)
+        
+        # Generate pipeline using LLM
+        pipeline = await generate_pipeline(
+            natural_language=request.natural_language,
+            source_type=request.source_type,
+            schema=schema,
+            source_config=request.source_config,
+            transformations=request.transformations
+        )
+        
+        # Execute the generated code
+        execution_result = await execute_python_code(
+            code=pipeline.get("code", ""),
+            file_paths=file_paths if request.source_type == "csv" else None,
+            db_config=request.source_config if request.source_type == "postgres" else None,
+            timeout=60
+        )
+        
+        return {
+            "pipeline": pipeline,
+            "execution": execution_result,
+            "source_type": request.source_type,
+            "schema": schema
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/pipeline/generate-csv-and-execute")
+async def generate_csv_and_execute(
+    file: UploadFile = File(...),
+    natural_language: str = Form(...),
+    source_type: str = Form(default="csv")
+):
+    """
+    Generate pipeline from uploaded CSV file, natural language request, and execute it
+    """
+    temp_path = None
+    try:
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            temp_path = tmp_file.name
+        
+        # Infer schema
+        schema = infer_schema_csv({"file_path": temp_path})
+        
+        # Generate pipeline using LLM
+        pipeline = await generate_pipeline(
+            natural_language=natural_language,
+            source_type=source_type,
+            schema=schema,
+            source_config={"file_path": temp_path},
+            transformations=None
+        )
+        
+        # Execute the generated code
+        execution_result = await execute_python_code(
+            code=pipeline.get("code", ""),
+            file_paths=[temp_path],
+            db_config=None,
+            timeout=60
+        )
+        
+        return {
+            "pipeline": pipeline,
+            "execution": execution_result,
             "source_type": source_type,
             "schema": schema
         }

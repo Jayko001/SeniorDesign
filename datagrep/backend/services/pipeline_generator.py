@@ -151,25 +151,33 @@ SOURCE CONFIG:
         prompt += f"SPECIFIC TRANSFORMATIONS REQUESTED:\n{json.dumps(transformations, indent=2)}\n\n"
     
     if source_type == "csv":
-        prompt += """Generate a Python pipeline that:
-1. Reads the CSV file
+        # Extract filename from source_config
+        file_path = source_config.get("file_path", "")
+        csv_filename = os.path.basename(file_path) if file_path else "data.csv"
+        csv_mount_path = f"/data/{csv_filename}"
+        
+        prompt += f"""Generate a Python pipeline that:
+1. Reads the CSV file from {csv_mount_path} (the file is mounted at this exact path)
 2. Performs the requested transformations (filters, joins, aggregations, etc.)
-3. Outputs the result (can be to another CSV, database, or return as JSON)
+3. Outputs the result using print() statements - the output will be captured automatically
+
+IMPORTANT FOR EXECUTION:
+- The CSV file is mounted at: {csv_mount_path}
+- Use this EXACT path in your code: file_path = '{csv_mount_path}'
+- Use print() to output results (e.g., print(df.head()), print(df.describe()), print(result.to_dict()))
+- For structured data, print as JSON: print(json.dumps(result.to_dict(orient='records')))
+- The code will be executed in a sandbox with pandas, psycopg2, and numpy available
+- PostgreSQL connection is available via environment variables: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
 
 Include:
-- Error handling
+- Error handling with try/except blocks
 - Data validation
 - Clear comments
-- Requirements/dependencies
+- Use print() to show results (not file writes)
+- Use the exact file path: {csv_mount_path}
 
-Format your response as JSON with:
-{
-  "description": "Brief description of what the pipeline does",
-  "language": "python",
-  "code": "The complete Python code here",
-  "steps": ["step1", "step2", ...],
-  "dependencies": ["pandas", "numpy", ...]
-}
+IMPORTANT: Return ONLY the Python code directly. Do NOT wrap it in JSON or markdown code blocks. 
+Just output the raw Python code that can be executed directly.
 """
     elif source_type == "postgres":
         prompt += """Generate a SQL pipeline that:
@@ -182,71 +190,49 @@ Include:
 - Index suggestions if applicable
 - Clear comments
 
-Format your response as JSON with:
-{
-  "description": "Brief description of what the pipeline does",
-  "language": "sql",
-  "code": "The complete SQL code here",
-  "steps": ["step1", "step2", ...],
-  "dependencies": []
-}
+IMPORTANT: Return ONLY the SQL code directly. Do NOT wrap it in JSON or markdown code blocks.
+Just output the raw SQL code that can be executed directly.
 """
     
     return prompt
 
 
 def _parse_pipeline_response(response: str, source_type: str) -> Dict[str, Any]:
-    """Parse OpenAI response to extract pipeline code"""
+    """Parse OpenAI response to extract pipeline code - expects direct code output, not JSON"""
     
-    # Try to extract JSON from response
-    try:
-        # Look for JSON code block
-        if "```json" in response:
-            json_start = response.find("```json") + 7
-            json_end = response.find("```", json_start)
-            json_str = response[json_start:json_end].strip()
-        elif "```" in response:
-            # Try to find any code block
-            json_start = response.find("```") + 3
-            json_end = response.find("```", json_start)
-            json_str = response[json_start:json_end].strip()
-            # Remove language identifier if present
-            if json_str.startswith("json"):
-                json_str = json_str[4:].strip()
-        else:
-            # Assume entire response is JSON
-            json_str = response.strip()
-        
-        pipeline = json.loads(json_str)
-        return pipeline
+    # Extract code directly (may be in code blocks or raw)
+    code = None
+    language = "python" if source_type == "csv" else "sql"
     
-    except json.JSONDecodeError:
-        # If JSON parsing fails, try to extract code directly
-        # Look for Python code block
-        if "```python" in response:
-            code_start = response.find("```python") + 9
-            code_end = response.find("```", code_start)
-            code = response[code_start:code_end].strip()
-            language = "python"
-        elif "```sql" in response:
-            code_start = response.find("```sql") + 6
-            code_end = response.find("```", code_start)
-            code = response[code_start:code_end].strip()
-            language = "sql"
-        elif "```" in response:
-            code_start = response.find("```") + 3
-            code_end = response.find("```", code_start)
-            code = response[code_start:code_end].strip()
-            language = source_type  # Default based on source
-        else:
-            code = response.strip()
-            language = "python" if source_type == "csv" else "sql"
-        
-        return {
-            "code": code,
-            "language": language,
-            "description": "Generated pipeline",
-            "steps": [],
-            "dependencies": []
-        }
+    # Look for code blocks first
+    if "```python" in response:
+        code_start = response.find("```python") + 9
+        code_end = response.find("```", code_start)
+        code = response[code_start:code_end].strip()
+        language = "python"
+    elif "```sql" in response:
+        code_start = response.find("```sql") + 6
+        code_end = response.find("```", code_start)
+        code = response[code_start:code_end].strip()
+        language = "sql"
+    elif "```" in response:
+        # Generic code block - extract content
+        code_start = response.find("```") + 3
+        code_end = response.find("```", code_start)
+        code = response[code_start:code_end].strip()
+        # Remove language identifier if present (e.g., "python\n" at start)
+        lines = code.split('\n', 1)
+        if len(lines) > 1 and lines[0] in ["python", "sql", "py"]:
+            code = lines[1]
+    else:
+        # No code blocks - use response directly
+        code = response.strip()
+    
+    return {
+        "code": code,
+        "language": language,
+        "description": "Generated pipeline",
+        "steps": [],
+        "dependencies": []
+    }
 
