@@ -13,6 +13,8 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [schema, setSchema] = useState(null);
+  const pipelineId = result?.pipeline_id;
+  const dashUrl = pipelineId ? `${API_BASE_URL}/dash/?pipeline_id=${pipelineId}` : null;
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -323,6 +325,26 @@ function App() {
                       <li key={idx}>{dep}</li>
                     ))}
                   </ul>
+                </div>
+              )}
+              {dashUrl && (
+                <div className="pipeline-visualization">
+                  <h3>Analytics Dashboard</h3>
+                  <iframe
+                    title="Analytics dashboard"
+                    src={dashUrl}
+                    className="pipeline-visualization-frame"
+                  />
+                  <div className="button-group" style={{ marginTop: '12px' }}>
+                    <a
+                      className="btn btn-secondary"
+                      href={dashUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open interactive view
+                    </a>
+                  </div>
                 </div>
               )}
             </div>

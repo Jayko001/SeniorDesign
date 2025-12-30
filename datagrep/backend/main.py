@@ -4,6 +4,7 @@ Main API server for natural language to pipeline generation
 """
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.wsgi import WSGIMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -14,7 +15,10 @@ from dotenv import load_dotenv
 
 from services.schema_inference import infer_schema_csv, infer_schema_postgres
 from services.pipeline_generator import generate_pipeline
+from services.analytics_generator import generate_analytics
+from services.pipeline_store import save_pipeline
 from services.supabase_client import get_supabase_client
+from dash_app import create_dash_app
 
 load_dotenv()
 
@@ -28,6 +32,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+dash_app = create_dash_app()
+app.mount("/dash", WSGIMiddleware(dash_app.server))
 
 
 class PipelineRequest(BaseModel):
@@ -131,11 +138,25 @@ async def generate_pipeline_endpoint(request: PipelineRequest):
             source_config=request.source_config,
             transformations=request.transformations
         )
+        analytics = None
+        try:
+            analytics = generate_analytics(
+                natural_language=request.natural_language,
+                source_type=request.source_type,
+                schema=schema,
+                source_config=request.source_config,
+            )
+        except Exception:
+            analytics = None
+        pipeline["analytics"] = analytics
+        pipeline_id = save_pipeline(pipeline)
         
         return {
             "pipeline": pipeline,
             "source_type": request.source_type,
-            "schema": schema
+            "schema": schema,
+            "analytics": analytics,
+            "pipeline_id": pipeline_id
         }
     
     except HTTPException:
@@ -172,11 +193,25 @@ async def generate_pipeline_csv(
             source_config={"file_path": temp_path},
             transformations=None
         )
+        analytics = None
+        try:
+            analytics = generate_analytics(
+                natural_language=natural_language,
+                source_type=source_type,
+                schema=schema,
+                source_config={"file_path": temp_path},
+            )
+        except Exception:
+            analytics = None
+        pipeline["analytics"] = analytics
+        pipeline_id = save_pipeline(pipeline)
         
         return {
             "pipeline": pipeline,
             "source_type": source_type,
-            "schema": schema
+            "schema": schema,
+            "analytics": analytics,
+            "pipeline_id": pipeline_id
         }
     
     except Exception as e:
@@ -193,4 +228,3 @@ async def generate_pipeline_csv(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
