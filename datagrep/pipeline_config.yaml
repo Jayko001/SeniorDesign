@@ -1,0 +1,34 @@
+# Datagrep Multi-Source Pipeline Configuration
+# This file defines data sources and relationships between them for multi-source pipeline generation
+
+sources:
+  # CSV source example
+  - name: employees_csv
+    type: csv
+    config:
+      file_path: sample_data/employees.csv
+  
+  # PostgreSQL source example (Supabase direct connection)
+  - name: departments_db
+    type: postgres
+    config:
+      host: aws-1-us-east-1.pooler.supabase.com
+      port: 5432
+      database: postgres
+      user: postgres.gunbydhyuhljlpysqgar
+      password: YOUR_PASSWORD_HERE
+      table_name: departments
+      sslmode: require
+
+# Relationships define how columns from different sources are related
+# These act like foreign key relationships for the LLM to understand joins
+relationships:
+  - from:
+      source: employees_csv
+      column: department_id
+    to:
+      source: departments_db
+      table: departments
+      column: id
+    type: foreign_key
+    description: "Employees CSV department_id references departments table id"

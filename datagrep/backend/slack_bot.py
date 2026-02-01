@@ -15,9 +15,10 @@ from dotenv import load_dotenv
 import json
 import requests
 
-from services.schema_inference import infer_schema_csv
+from services.schema_inference import infer_schema_csv, build_unified_schema
 from services.pipeline_generator import generate_pipeline
 from services.code_executor import execute_python_code
+from services.config_parser import get_config_from_path
 
 load_dotenv()
 
@@ -100,6 +101,7 @@ def handle_help(message, say):
 
 • `@datagrep generate pipeline: <description>` - Generate a data pipeline from natural language (auto-executes)
 • `@datagrep generate pipeline: <description> no execute` - Generate pipeline without executing
+• `@datagrep generate multi-source pipeline: <description>` - Generate multi-source pipeline using config file
 • `@datagrep infer schema: <file>` - Infer schema from uploaded CSV file
 • `@datagrep help` - Show this help message
 
@@ -227,7 +229,53 @@ def handle_message(message, say):
             say("Please upload a CSV file and generate a pipeline first. Execution happens automatically after generation.")
         return
     
-    if "generate pipeline" in cleaned_text or "create pipeline" in cleaned_text:
+    # Check for multi-source pipeline request
+    if "generate multi-source pipeline" in cleaned_text or "multi-source pipeline" in cleaned_text:
+        # Extract natural language description
+        desc_start = cleaned_text.find(":") + 1 if ":" in cleaned_text else len(cleaned_text)
+        description = cleaned_text[desc_start:].strip()
+        
+        if not description:
+            say("Please provide a description of the multi-source pipeline you want to generate.\nExample: `generate multi-source pipeline: Join employees CSV with departments table`")
+            return
+        
+        # Try to get config from default location
+        try:
+            config = get_config_from_path()
+            if config is None:
+                say("Config file not found. Please create `pipeline_config.yaml` in the datagrep directory with your sources and relationships.")
+                return
+            
+            # Build unified schema
+            unified_schema = build_unified_schema(config)
+            
+            # Build source_config dict
+            source_configs = {}
+            file_paths = []
+            db_config = None
+            
+            for source in config["sources"]:
+                source_name = source["name"]
+                source_type = source["type"]
+                source_cfg = source["config"]
+                source_configs[source_name] = source_cfg
+                
+                if source_type == "csv":
+                    file_path = source_cfg.get("file_path")
+                    if file_path and os.path.exists(file_path):
+                        file_paths.append(file_path)
+                elif source_type == "postgres" and db_config is None:
+                    db_config = source_cfg
+            
+            # Generate multi-source pipeline
+            auto_execute = "no execute" not in cleaned_text.lower() and "skip execute" not in cleaned_text.lower()
+            run_async(handle_multi_source_pipeline_generation(
+                say, description, unified_schema, source_configs, file_paths, db_config, auto_execute
+            ))
+        except Exception as e:
+            say(f"Error generating multi-source pipeline: {str(e)}")
+    
+    elif "generate pipeline" in cleaned_text or "create pipeline" in cleaned_text:
         # Extract natural language description
         desc_start = cleaned_text.find(":") + 1 if ":" in cleaned_text else len(cleaned_text)
         description = cleaned_text[desc_start:].strip()
@@ -507,7 +555,6 @@ async def handle_multi_source_pipeline_generation(
     except Exception as e:
         say(f"Error generating multi-source pipeline: {str(e)}")
         raise
-
 
 def handle_schema_inference(say, csv_file_path: str):
     """Handle schema inference request"""
