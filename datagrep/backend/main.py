@@ -130,7 +130,12 @@ async def generate_pipeline_endpoint(request: PipelineRequest):
                 )
             schema = infer_schema_csv(request.source_config)
         elif request.source_type == "postgres":
-            schema = infer_schema_postgres(request.source_config)
+            table_name = request.source_config.get("table_name")
+            if table_name:
+                schema = infer_schema_postgres(request.source_config)
+            else:
+                # Skip schema inference when table name is unknown; let LLM rely on description
+                schema = {}
         
         # Generate pipeline using LLM
         pipeline = await generate_pipeline(
@@ -245,7 +250,11 @@ async def generate_and_execute_pipeline(request: PipelineRequest):
             schema = infer_schema_csv(request.source_config)
             file_paths = [file_path]
         elif request.source_type == "postgres":
-            schema = infer_schema_postgres(request.source_config)
+            table_name = request.source_config.get("table_name")
+            if table_name:
+                schema = infer_schema_postgres(request.source_config)
+            else:
+                schema = {}
         
         # Generate pipeline using LLM
         pipeline = await generate_pipeline(
@@ -335,4 +344,3 @@ async def generate_csv_and_execute(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
