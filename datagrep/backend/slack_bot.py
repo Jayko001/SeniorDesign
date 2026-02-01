@@ -28,9 +28,6 @@ client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
 # API base URL (can be configured via env var)
 API_BASE_URL = os.environ.get("DATAGREP_API_URL", "http://localhost:8000")
 
-# Store recent CSV files per channel (file_id -> file_info)
-recent_files = {}
-
 
 def run_async(coro):
     """Helper to run async function from sync context"""
@@ -133,48 +130,30 @@ def download_csv_file(file_id: str) -> str:
 
 
 def find_csv_file(message: dict, channel_id: str) -> tuple:
-    """Find CSV file from message attachments or recent files in channel"""
-    # First, check if file is attached to this message
+    """Find CSV file from message attachments only (do not reuse old uploads)."""
     files = message.get("files", [])
     if files:
         for file_info in files:
             if file_info.get("mimetype") == "text/csv" or file_info.get("name", "").endswith(".csv"):
                 return file_info["id"], file_info.get("name", "file.csv")
-    
-    # If no file in message, try to find recent CSV file in this channel
-    if channel_id in recent_files:
-        file_id, file_name = recent_files[channel_id]
-        try:
-            # Verify file still exists
-            file_info = client.files_info(file=file_id)["file"]
-            if file_info.get("mimetype") == "text/csv" or file_info.get("name", "").endswith(".csv"):
-                return file_id, file_info.get("name", "file.csv")
-        except:
-            # File no longer available, remove from cache
-            del recent_files[channel_id]
-    
-    # Try to find recent files in conversation using files.list
-    try:
-        # Get recent CSV files (up to 5)
-        response = client.files_list(
-            types="csv",
-            count=5
-        )
-        files_list = response.get("files", [])
-        if files_list:
-            # Filter files that might be from this channel (check if file has channel info)
-            # Or just use the most recent CSV file
-            recent_file = files_list[0]
-            file_id = recent_file["id"]
-            file_name = recent_file.get("name", "file.csv")
-            # Cache it
-            recent_files[channel_id] = (file_id, file_name)
-            return file_id, file_name
-    except Exception as e:
-        # If files_list fails (e.g., no permission), continue
-        pass
-    
     return None, None
+
+
+def wants_postgres(description: str) -> bool:
+    """Heuristically detect postgres/supabase intent without requiring a CSV upload."""
+    keywords = ["postgres", "postgre", "supabase", "table", "database", "db", "sql"]
+    return any(word in description.lower() for word in keywords)
+
+
+def extract_table_name(description: str) -> str:
+    """Very lightweight table name extractor (looks for 'table <name>' or 'from <name>')."""
+    tokens = description.lower().split()
+    for i, tok in enumerate(tokens):
+        if tok == "table" and i + 1 < len(tokens):
+            return tokens[i + 1].strip(",.;")
+        if tok == "from" and i + 1 < len(tokens):
+            return tokens[i + 1].strip(",.;")
+    return ""
 
 
 @app.message("")
@@ -245,7 +224,6 @@ def handle_message(message, say):
         if csv_file_path:
             # Generate pipeline from CSV
             try:
-                # Check if user wants to skip execution
                 auto_execute = "no execute" not in cleaned_text.lower() and "skip execute" not in cleaned_text.lower()
                 run_async(handle_pipeline_generation(say, description, csv_file_path, auto_execute=auto_execute))
             except Exception as e:
@@ -253,8 +231,76 @@ def handle_message(message, say):
             finally:
                 if csv_file_path and os.path.exists(csv_file_path):
                     os.remove(csv_file_path)
+        elif wants_postgres(description):
+            # Defer to API: let backend infer schema + generate against Postgres/Supabase
+            try:
+                table_name = extract_table_name(description)
+                payload = {
+                    "natural_language": description,
+                    "source_type": "postgres",
+                    "source_config": {"table_name": table_name} if table_name else {}
+                }
+                resp = requests.post(f"{API_BASE_URL}/api/pipeline/generate", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                pipeline = data.get("pipeline", {})
+                schema = data.get("schema")
+
+                response_parts = [
+                    "*Pipeline Generated* :rocket:",
+                    f"\n*Description:* {pipeline.get('description', 'N/A')}",
+                    f"\n*Language:* {pipeline.get('language', 'python')}",
+                    f"\n*Generated Code:*",
+                    format_code_block(pipeline.get('code', ''), pipeline.get('language', 'python'))
+                ]
+                if schema:
+                    response_parts.append("\n*Schema (from Postgres/Supabase):*")
+                    response_parts.append(format_code_block(json.dumps(schema, indent=2), "json"))
+                say("\n".join(response_parts))
+
+                # Auto-execute for Postgres as well
+                if pipeline.get("code"):
+                    say("Executing pipeline against Postgres/Supabase... :hourglass_flowing_sand:")
+                    db_config = {
+                        "host": os.getenv("POSTGRES_HOST"),
+                        "port": os.getenv("POSTGRES_PORT"),
+                        "database": os.getenv("POSTGRES_DB"),
+                        "user": os.getenv("POSTGRES_USER"),
+                        "password": os.getenv("POSTGRES_PASSWORD"),
+                        "supabase_url": os.getenv("SUPABASE_URL"),
+                        "supabase_key": os.getenv("SUPABASE_KEY"),
+                    }
+                    try:
+                        execution_result = run_async(execute_python_code(
+                            code=pipeline.get("code", ""),
+                            file_paths=None,
+                            db_config=db_config,
+                            timeout=60
+                        ))
+                        exec_parts = [f"\n*Execution Results* :white_check_mark:" if execution_result["status"] == "success" else "\n*Execution Results* :x:"]
+                        exec_parts.append(f"*Status:* {execution_result['status'].capitalize()} ({execution_result['execution_time']}s)")
+                        if execution_result.get("error"):
+                            error = execution_result["error"]
+                            if len(error) > 1500:
+                                error = error[:1500] + "\n... (truncated)"
+                            exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
+                        if execution_result.get("output"):
+                            output = execution_result["output"]
+                            if len(output) > 1500:
+                                output = output[:1500] + "\n... (truncated)"
+                            exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                        if execution_result.get("result_data"):
+                            result_json = json.dumps(execution_result["result_data"], indent=2)
+                            if len(result_json) > 1500:
+                                result_json = result_json[:1500] + "\n... (truncated)"
+                            exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
+                        say("\n".join(exec_parts))
+                    except Exception as e:
+                        say(f"*Execution Error:* {str(e)}")
+            except Exception as e:
+                say(f"Error generating Postgres pipeline: {str(e)}")
         else:
-            say("Please upload a CSV file (or share one in this channel) to generate a pipeline from it.")
+            say("Please upload a CSV file (or share one in this channel) to generate a pipeline from it, or mention postgres/supabase/table to target the database.")
     
     elif "infer schema" in cleaned_text or "schema" in cleaned_text:
         if csv_file_path:
@@ -455,4 +501,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

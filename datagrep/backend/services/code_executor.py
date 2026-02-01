@@ -67,15 +67,53 @@ async def execute_python_code(
                     "mode": "ro"
                 }
     
-    # Prepare environment variables
+    # Prepare environment variables (support both Supabase and direct Postgres)
     env_vars = {}
-    if db_config:
-        # Set PostgreSQL connection environment variables
-        env_vars["POSTGRES_HOST"] = db_config.get("host", os.getenv("POSTGRES_HOST", "db"))
-        env_vars["POSTGRES_PORT"] = str(db_config.get("port", os.getenv("POSTGRES_PORT", "5432")))
-        env_vars["POSTGRES_DB"] = db_config.get("database", os.getenv("POSTGRES_DB", "datagrep"))
-        env_vars["POSTGRES_USER"] = db_config.get("user", os.getenv("POSTGRES_USER", "datagrep"))
-        env_vars["POSTGRES_PASSWORD"] = db_config.get("password", os.getenv("POSTGRES_PASSWORD", "datagrep_dev"))
+    db_config = db_config or {}
+
+    # Supabase credentials (used by supabase-py client inside sandbox)
+    supabase_url = db_config.get("supabase_url") or os.getenv("SUPABASE_URL")
+    supabase_key = db_config.get("supabase_key") or os.getenv("SUPABASE_KEY")
+    if supabase_url:
+        env_vars["SUPABASE_URL"] = supabase_url
+    if supabase_key:
+        env_vars["SUPABASE_KEY"] = supabase_key
+
+    # Derive Supabase Postgres host from URL if explicit host not provided
+    def _derive_supabase_host(url: Optional[str]) -> Optional[str]:
+        if not url:
+            return None
+        try:
+            # SUPABASE_URL is like https://<ref>.supabase.co
+            ref = url.split("//", 1)[1].split(".", 1)[0]
+            return f"db.{ref}.supabase.co"
+        except Exception:
+            return None
+
+    # PostgreSQL connection details (Supabase exposes Postgres)
+    env_vars["POSTGRES_HOST"] = (
+        db_config.get("host")
+        or os.getenv("POSTGRES_HOST")
+        or _derive_supabase_host(supabase_url)
+    )
+    env_vars["POSTGRES_PORT"] = str(db_config.get("port") or os.getenv("POSTGRES_PORT") or "5432")
+    env_vars["POSTGRES_DB"] = db_config.get("database") or os.getenv("POSTGRES_DB") or "postgres"
+    env_vars["POSTGRES_USER"] = db_config.get("user") or os.getenv("POSTGRES_USER") or "postgres"
+    env_vars["POSTGRES_PASSWORD"] = db_config.get("password") or os.getenv("POSTGRES_PASSWORD")
+
+    # If still missing critical pieces, raise early to avoid psycopg falling back to unix sockets
+    if not env_vars["POSTGRES_HOST"]:
+        raise ValueError("POSTGRES_HOST is not set. Provide Supabase Postgres host via env or db_config.")
+    if not env_vars["POSTGRES_PASSWORD"]:
+        raise ValueError("POSTGRES_PASSWORD is not set. Provide Supabase Postgres password via env or db_config.")
+
+    # Also expose common PG* aliases for libraries that look for them (non-breaking)
+    env_vars["PGHOST"] = env_vars["POSTGRES_HOST"]
+    env_vars["PGPORT"] = env_vars["POSTGRES_PORT"]
+    env_vars["PGDATABASE"] = env_vars["POSTGRES_DB"]
+    env_vars["PGUSER"] = env_vars["POSTGRES_USER"]
+    env_vars["PGPASSWORD"] = env_vars["POSTGRES_PASSWORD"]
+    env_vars["PGSSLMODE"] = db_config.get("sslmode") or os.getenv("PGSSLMODE") or "require"
     
     # Create temporary file for code - write it directly without wrapping
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as code_file:
@@ -255,4 +293,3 @@ def execute_python_code_sync(
             return loop.run_until_complete(execute_python_code(code, file_paths, db_config, timeout))
     except RuntimeError:
         return asyncio.run(execute_python_code(code, file_paths, db_config, timeout))
-
