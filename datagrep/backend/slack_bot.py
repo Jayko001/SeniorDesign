@@ -82,9 +82,21 @@ def format_schema_response(schema: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def make_say_in_thread(say, message: dict):
+    """Create a say function that replies in the message's thread."""
+    thread_ts = message.get("thread_ts") or message.get("ts")
+
+    def say_in_thread(text, **kwargs):
+        kwargs.setdefault("thread_ts", thread_ts)
+        return say(text, **kwargs)
+
+    return say_in_thread
+
+
 @app.message("help")
 def handle_help(message, say):
     """Show help message"""
+    say = make_say_in_thread(say, message)
     help_text = """*Datagrep Slack Bot Commands:*
 
 • `@datagrep generate pipeline: <description>` - Generate a data pipeline from natural language (auto-executes)
@@ -168,6 +180,9 @@ def handle_message(message, say):
     # Ignore bot messages
     if message.get("bot_id"):
         return
+    
+    # Reply in thread (or create thread from top-level message)
+    say = make_say_in_thread(say, message)
     
     # Get bot user ID
     try:
@@ -457,7 +472,6 @@ async def handle_pipeline_generation(say, description: str, csv_file_path: str, 
         say(f"Error generating pipeline: {str(e)}")
         raise
 
-
 async def handle_multi_source_pipeline_generation(
     say, description: str, unified_schema: Dict[str, Any], 
     source_configs: Dict[str, Any], file_paths: list, db_config: Dict[str, Any], 
@@ -542,7 +556,6 @@ async def handle_multi_source_pipeline_generation(
         say(f"Error generating multi-source pipeline: {str(e)}")
         raise
 
-# TODO: respond in thread
 def handle_schema_inference(say, csv_file_path: str):
     """Handle schema inference request"""
     try:
@@ -554,19 +567,10 @@ def handle_schema_inference(say, csv_file_path: str):
         raise
 
 
-@app.event("app_mention")
-def handle_app_mention_events(event, say):
-    """Handle app_mention events (when bot is mentioned in a channel)"""
-    # Convert app_mention event to message-like format for existing handler
-    message = {
-        "text": event.get("text", ""),
-        "user": event.get("user"),
-        "channel": event.get("channel"),
-        "bot_id": None,  # Not a bot message
-        "files": event.get("files", [])
-    }
-    # Use the existing message handler logic
-    handle_message(message, say)
+# Note: We intentionally do NOT register app_mention - when a user @mentions the bot,
+# Slack sends BOTH a message event AND an app_mention event. The message handler
+# already processes mentions (checks bot_mentioned), so handling app_mention would
+# cause commands to run twice.
 
 
 @app.event("file_shared")
