@@ -279,18 +279,26 @@ IMPORTANT: Return ONLY the Python code directly. Do NOT wrap it in JSON or markd
 Just output the raw Python code that can be executed directly.
 """
     elif source_type == "postgres":
-        prompt += """Generate a SQL pipeline that:
-1. Queries the PostgreSQL database
-2. Performs the requested transformations (filters, joins, aggregations, etc.)
-3. Can create views, materialized views, or output tables
+        prompt += """Generate a Python pipeline (NOT raw SQL) that:
+1. Connects to PostgreSQL using psycopg2 with credentials from environment variables:
+   POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+2. Executes the required SQL to satisfy the user request
+3. Prints results as JSON (use json.dumps with default=str)
 
-Include:
-- Proper SQL syntax
-- Index suggestions if applicable
-- Clear comments
+Execution environment details:
+- psycopg2 and json are available
+- SSL is required; pass sslmode="require" in psycopg2.connect
+- The code runs inside a sandbox container; do not read/write local files
 
-IMPORTANT: Return ONLY the SQL code directly. Do NOT wrap it in JSON or markdown code blocks.
-Just output the raw SQL code that can be executed directly.
+Include in the generated code:
+- Small debug prints: show host/port/db/user before connecting
+- Connect with psycopg2.connect(..., sslmode="require")
+- Use RealDictCursor to get dict rows
+- try/except/finally with safe cleanup; initialize conn/cur to None
+- If an error occurs, print the error message
+
+IMPORTANT: Return ONLY the Python code directly. Do NOT wrap it in JSON or markdown code blocks.
+Just output raw executable Python.
 """
     
     return prompt
@@ -301,6 +309,7 @@ def _parse_pipeline_response(response: str, language: str = "python") -> Dict[st
     
     # Extract code directly (may be in code blocks or raw)
     code = None
+    language = "python" if source_type == "csv" else "python" if source_type == "postgres" else "sql"
     
     # Look for code blocks first
     if "```python" in response:
@@ -333,4 +342,3 @@ def _parse_pipeline_response(response: str, language: str = "python") -> Dict[st
         "steps": [],
         "dependencies": []
     }
-
