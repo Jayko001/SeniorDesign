@@ -237,3 +237,58 @@ def _infer_type_from_value(value: Any) -> str:
         return "text"
     else:
         return "text"
+
+
+def build_unified_schema(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build unified schema from multi-source configuration
+    
+    Args:
+        config: Configuration dictionary with 'sources' and 'relationships' keys
+                (typically from config_parser.parse_config_file())
+        
+    Returns:
+        Unified schema dictionary with:
+        - sources: Array of source schemas with identifiers
+        - relationships: Array of relationship mappings
+        - Each source schema includes: name, type, columns, sample_rows, source metadata
+    """
+    if "sources" not in config:
+        raise ValueError("Config must contain 'sources' key")
+    
+    unified_schema = {
+        "sources": [],
+        "relationships": config.get("relationships", [])
+    }
+    
+    # Infer schema for each source
+    for source_def in config["sources"]:
+        source_name = source_def["name"]
+        source_type = source_def["type"]
+        source_config = source_def["config"]
+        
+        # Infer schema based on source type
+        if source_type == "csv":
+            schema = infer_schema_csv(source_config)
+        elif source_type == "postgres":
+            schema = infer_schema_postgres(source_config)
+        else:
+            raise ValueError(f"Unsupported source type: {source_type}")
+        
+        # Add source metadata to schema
+        source_schema = {
+            "name": source_name,
+            "type": source_type,
+            "config": source_config,
+            "columns": schema.get("columns", []),
+            "sample_rows": schema.get("sample_rows", []),
+            "row_count": schema.get("row_count", 0)
+        }
+        
+        # Add table_name for postgres sources
+        if source_type == "postgres":
+            source_schema["table_name"] = schema.get("table_name", source_config.get("table_name"))
+        
+        unified_schema["sources"].append(source_schema)
+    
+    return unified_schema

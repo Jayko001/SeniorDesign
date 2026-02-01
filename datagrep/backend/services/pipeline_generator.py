@@ -87,8 +87,17 @@ async def generate_pipeline(
             
             generated_code = response.choices[0].message.content
             
+            # Detect if this is multi-source (unified schema)
+            is_multi_source = "sources" in schema and isinstance(schema.get("sources"), list) and len(schema.get("sources", [])) > 1
+            
+            # Determine language - multi-source always uses Python
+            if is_multi_source:
+                language = "python"
+            else:
+                language = "python" if source_type == "csv" else "sql"
+            
             # Parse the response to extract code and metadata
-            pipeline = _parse_pipeline_response(generated_code, source_type)
+            pipeline = _parse_pipeline_response(generated_code, language)
             
             return {
                 "code": pipeline["code"],
@@ -96,7 +105,7 @@ async def generate_pipeline(
                 "description": pipeline.get("description", ""),
                 "steps": pipeline.get("steps", []),
                 "dependencies": pipeline.get("dependencies", []),
-                "source_type": source_type,
+                "source_type": "multi" if is_multi_source else source_type,
                 "model_used": model
             }
         
@@ -130,6 +139,9 @@ def _build_pipeline_prompt(
 ) -> str:
     """Build the prompt for OpenAI"""
     
+    # Check if this is a unified/multi-source schema
+    is_multi_source = "sources" in schema and isinstance(schema.get("sources"), list) and len(schema.get("sources", [])) > 1
+    
     schema_str = json.dumps(schema, indent=2)
     
     prompt = f"""Generate a data pipeline based on the following requirements:
@@ -137,7 +149,7 @@ def _build_pipeline_prompt(
 USER REQUEST:
 {natural_language}
 
-DATA SOURCE TYPE: {source_type}
+DATA SOURCE TYPE: {source_type if not is_multi_source else "multi-source (multiple data sources)"}
 
 SCHEMA:
 {schema_str}
@@ -150,7 +162,94 @@ SOURCE CONFIG:
     if transformations:
         prompt += f"SPECIFIC TRANSFORMATIONS REQUESTED:\n{json.dumps(transformations, indent=2)}\n\n"
     
-    if source_type == "csv":
+    # Handle multi-source pipelines
+    if is_multi_source:
+        sources = schema.get("sources", [])
+        relationships = schema.get("relationships", [])
+        
+        prompt += """MULTI-SOURCE PIPELINE INSTRUCTIONS:
+
+You are working with multiple data sources. Follow these steps:
+
+1. LOAD DATA FROM ALL SOURCES:
+"""
+        
+        csv_sources = []
+        postgres_sources = []
+        for source in sources:
+            source_name = source["name"]
+            source_type_src = source["type"]
+            source_cfg = source.get("config", {})
+            
+            if source_type_src == "csv":
+                file_path = source_cfg.get("file_path", "")
+                csv_filename = os.path.basename(file_path) if file_path else f"{source_name}.csv"
+                csv_mount_path = f"/data/{csv_filename}"
+                csv_sources.append((source_name, csv_mount_path))
+                prompt += f"   - Load CSV '{source_name}' from: {csv_mount_path}\n"
+            elif source_type_src == "postgres":
+                postgres_sources.append((source_name, source_cfg))
+                table_name = source_cfg.get("table_name", "")
+                prompt += f"   - Load PostgreSQL table '{source_name}' (table: {table_name}) using psycopg2\n"
+        
+        prompt += "\n2. JOIN/MERGE DATA USING RELATIONSHIPS:\n"
+        if relationships:
+            for rel in relationships:
+                from_source = rel["from"]["source"]
+                from_col = rel["from"]["column"]
+                to_source = rel["to"]["source"]
+                to_col = rel["to"]["column"]
+                rel_type = rel.get("type", "foreign_key")
+                rel_desc = rel.get("description", "")
+                
+                prompt += f"   - {from_source}.{from_col} -> {to_source}.{to_col} ({rel_type})"
+                if rel_desc:
+                    prompt += f" - {rel_desc}"
+                prompt += "\n"
+        else:
+            prompt += "   - No explicit relationships defined. Use common sense to join based on column names and data types.\n"
+        
+        prompt += f"""
+3. PERFORM REQUESTED TRANSFORMATIONS:
+   - Apply filters, aggregations, and other transformations as requested
+   - Use pandas for data manipulation when working with CSV data
+   - Use SQL queries for PostgreSQL data, or load into pandas DataFrames for complex joins
+
+4. OUTPUT RESULTS:
+   - Use print() to output results (e.g., print(df.head()), print(df.describe()))
+   - For structured data, print as JSON: print(json.dumps(result.to_dict(orient='records')))
+   - The output will be captured automatically
+
+IMPORTANT FOR EXECUTION:
+"""
+        
+        if csv_sources:
+            prompt += "- CSV files are mounted at /data/ with their filenames\n"
+            for source_name, mount_path in csv_sources:
+                prompt += f"  - {source_name}: {mount_path}\n"
+        
+        if postgres_sources:
+            prompt += "- PostgreSQL connection is available via environment variables:\n"
+            prompt += "  - POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD\n"
+            prompt += "- Use psycopg2 to connect: conn = psycopg2.connect(host=os.getenv('POSTGRES_HOST'), ...)\n"
+        
+        prompt += """
+- The code will be executed in a sandbox with pandas, psycopg2, and numpy available
+- For multi-source joins, you can:
+  * Load PostgreSQL data into pandas DataFrames and join with CSV data
+  * Or use SQL to query PostgreSQL and then join results with CSV data in pandas
+
+Include:
+- Error handling with try/except blocks
+- Data validation
+- Clear comments explaining each step
+- Use print() to show results (not file writes)
+
+IMPORTANT: Return ONLY the Python code directly. Do NOT wrap it in JSON or markdown code blocks.
+Just output the raw Python code that can be executed directly.
+"""
+    
+    elif source_type == "csv":
         # Extract filename from source_config
         file_path = source_config.get("file_path", "")
         csv_filename = os.path.basename(file_path) if file_path else "data.csv"
@@ -197,12 +296,11 @@ Just output the raw SQL code that can be executed directly.
     return prompt
 
 
-def _parse_pipeline_response(response: str, source_type: str) -> Dict[str, Any]:
+def _parse_pipeline_response(response: str, language: str = "python") -> Dict[str, Any]:
     """Parse OpenAI response to extract pipeline code - expects direct code output, not JSON"""
     
     # Extract code directly (may be in code blocks or raw)
     code = None
-    language = "python" if source_type == "csv" else "sql"
     
     # Look for code blocks first
     if "```python" in response:

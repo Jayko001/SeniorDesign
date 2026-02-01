@@ -6,18 +6,19 @@ sources:
   - name: employees_csv
     type: csv
     config:
-      file_path: /path/to/employees.csv
+      file_path: sample_data/employees.csv
   
-  # PostgreSQL source example
+  # PostgreSQL source example (Supabase direct connection)
   - name: departments_db
     type: postgres
     config:
-      host: localhost
+      host: aws-1-us-east-1.pooler.supabase.com
       port: 5432
-      database: company_db
-      user: postgres
-      password: postgres
+      database: postgres
+      user: postgres.gunbydhyuhljlpysqgar
+      password: YOUR_PASSWORD_HERE
       table_name: departments
+      sslmode: require
 
 # Relationships define how columns from different sources are related
 # These act like foreign key relationships for the LLM to understand joins

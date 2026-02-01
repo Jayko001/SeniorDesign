@@ -15,9 +15,10 @@ from dotenv import load_dotenv
 import json
 import requests
 
-from services.schema_inference import infer_schema_csv
+from services.schema_inference import infer_schema_csv, build_unified_schema
 from services.pipeline_generator import generate_pipeline
 from services.code_executor import execute_python_code
+from services.config_parser import get_config_from_path
 
 load_dotenv()
 
@@ -91,6 +92,7 @@ def handle_help(message, say):
 
 • `@datagrep generate pipeline: <description>` - Generate a data pipeline from natural language (auto-executes)
 • `@datagrep generate pipeline: <description> no execute` - Generate pipeline without executing
+• `@datagrep generate multi-source pipeline: <description>` - Generate multi-source pipeline using config file
 • `@datagrep infer schema: <file>` - Infer schema from uploaded CSV file
 • `@datagrep help` - Show this help message
 
@@ -233,7 +235,53 @@ def handle_message(message, say):
             say("Please upload a CSV file and generate a pipeline first. Execution happens automatically after generation.")
         return
     
-    if "generate pipeline" in cleaned_text or "create pipeline" in cleaned_text:
+    # Check for multi-source pipeline request
+    if "generate multi-source pipeline" in cleaned_text or "multi-source pipeline" in cleaned_text:
+        # Extract natural language description
+        desc_start = cleaned_text.find(":") + 1 if ":" in cleaned_text else len(cleaned_text)
+        description = cleaned_text[desc_start:].strip()
+        
+        if not description:
+            say("Please provide a description of the multi-source pipeline you want to generate.\nExample: `generate multi-source pipeline: Join employees CSV with departments table`")
+            return
+        
+        # Try to get config from default location
+        try:
+            config = get_config_from_path()
+            if config is None:
+                say("Config file not found. Please create `pipeline_config.yaml` in the datagrep directory with your sources and relationships.")
+                return
+            
+            # Build unified schema
+            unified_schema = build_unified_schema(config)
+            
+            # Build source_config dict
+            source_configs = {}
+            file_paths = []
+            db_config = None
+            
+            for source in config["sources"]:
+                source_name = source["name"]
+                source_type = source["type"]
+                source_cfg = source["config"]
+                source_configs[source_name] = source_cfg
+                
+                if source_type == "csv":
+                    file_path = source_cfg.get("file_path")
+                    if file_path and os.path.exists(file_path):
+                        file_paths.append(file_path)
+                elif source_type == "postgres" and db_config is None:
+                    db_config = source_cfg
+            
+            # Generate multi-source pipeline
+            auto_execute = "no execute" not in cleaned_text.lower() and "skip execute" not in cleaned_text.lower()
+            run_async(handle_multi_source_pipeline_generation(
+                say, description, unified_schema, source_configs, file_paths, db_config, auto_execute
+            ))
+        except Exception as e:
+            say(f"Error generating multi-source pipeline: {str(e)}")
+    
+    elif "generate pipeline" in cleaned_text or "create pipeline" in cleaned_text:
         # Extract natural language description
         desc_start = cleaned_text.find(":") + 1 if ":" in cleaned_text else len(cleaned_text)
         description = cleaned_text[desc_start:].strip()
@@ -361,6 +409,91 @@ async def handle_pipeline_generation(say, description: str, csv_file_path: str, 
     
     except Exception as e:
         say(f"Error generating pipeline: {str(e)}")
+        raise
+
+
+async def handle_multi_source_pipeline_generation(
+    say, description: str, unified_schema: Dict[str, Any], 
+    source_configs: Dict[str, Any], file_paths: list, db_config: Dict[str, Any], 
+    auto_execute: bool = True
+):
+    """Handle multi-source pipeline generation request"""
+    try:
+        # Generate pipeline with unified schema
+        # Note: We pass unified_schema which has "sources" key, so pipeline generator should detect it
+        pipeline = await generate_pipeline(
+            natural_language=description,
+            source_type="csv",  # Base type, but schema indicates multi-source
+            schema=unified_schema,
+            source_config=source_configs,
+            transformations=None
+        )
+        
+        # Format response
+        response_parts = [
+            f"*Multi-Source Pipeline Generated* :rocket:",
+            f"\n*Description:* {pipeline.get('description', 'N/A')}",
+            f"\n*Language:* {pipeline.get('language', 'python')}",
+            f"\n*Sources:* {len(unified_schema['sources'])} source(s)",
+            f"\n*Relationships:* {len(unified_schema.get('relationships', []))} relationship(s)",
+            f"\n*Generated Code:*",
+            format_code_block(pipeline.get("code", ""), pipeline.get("language", "python"))
+        ]
+        
+        if pipeline.get("steps"):
+            response_parts.append(f"\n*Steps:*\n" + "\n".join([f"  • {step}" for step in pipeline["steps"]]))
+        
+        if pipeline.get("dependencies"):
+            response_parts.append(f"\n*Dependencies:* `{', '.join(pipeline['dependencies'])}`")
+        
+        say("\n".join(response_parts))
+        
+        # Auto-execute if requested
+        if auto_execute and pipeline.get("code"):
+            say("Executing pipeline... :hourglass_flowing_sand:")
+            try:
+                execution_result = await execute_python_code(
+                    code=pipeline.get("code", ""),
+                    file_paths=file_paths if file_paths else None,
+                    db_config=db_config,
+                    timeout=60
+                )
+                
+                # Format execution results
+                exec_parts = [f"\n*Execution Results* :white_check_mark:"]
+                
+                if execution_result["status"] == "success":
+                    exec_parts.append(f"*Status:* Success ({execution_result['execution_time']}s)")
+                    if execution_result.get("output"):
+                        output = execution_result["output"]
+                        if len(output) > 1500:
+                            output = output[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                    if execution_result.get("result_data"):
+                        result_json = json.dumps(execution_result["result_data"], indent=2)
+                        if len(result_json) > 1500:
+                            result_json = result_json[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
+                else:
+                    exec_parts.append(f"*Status:* Error ({execution_result['execution_time']}s)")
+                    if execution_result.get("error"):
+                        error = execution_result["error"]
+                        if len(error) > 1500:
+                            error = error[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
+                    if execution_result.get("output"):
+                        output = execution_result["output"]
+                        if len(output) > 500:
+                            output = output[:500] + "\n... (truncated)"
+                        exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                
+                say("\n".join(exec_parts))
+            
+            except Exception as e:
+                say(f"*Execution Error:* {str(e)}")
+    
+    except Exception as e:
+        say(f"Error generating multi-source pipeline: {str(e)}")
         raise
 
 # TODO: respond in thread
