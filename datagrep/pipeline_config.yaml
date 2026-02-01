@@ -1,0 +1,33 @@
+# Datagrep Multi-Source Pipeline Configuration
+# This file defines data sources and relationships between them for multi-source pipeline generation
+
+sources:
+  # CSV source example
+  - name: employees_csv
+    type: csv
+    config:
+      file_path: /path/to/employees.csv
+  
+  # PostgreSQL source example
+  - name: departments_db
+    type: postgres
+    config:
+      host: localhost
+      port: 5432
+      database: company_db
+      user: postgres
+      password: postgres
+      table_name: departments
+
+# Relationships define how columns from different sources are related
+# These act like foreign key relationships for the LLM to understand joins
+relationships:
+  - from:
+      source: employees_csv
+      column: department_id
+    to:
+      source: departments_db
+      table: departments
+      column: id
+    type: foreign_key
+    description: "Employees CSV department_id references departments table id"
