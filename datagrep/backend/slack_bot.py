@@ -421,19 +421,10 @@ def handle_schema_inference(say, csv_file_path: str):
         raise
 
 
-@app.event("app_mention")
-def handle_app_mention_events(event, say):
-    """Handle app_mention events (when bot is mentioned in a channel)"""
-    # Convert app_mention event to message-like format for existing handler
-    message = {
-        "text": event.get("text", ""),
-        "user": event.get("user"),
-        "channel": event.get("channel"),
-        "bot_id": None,  # Not a bot message
-        "files": event.get("files", [])
-    }
-    # Use the existing message handler logic
-    handle_message(message, say)
+# Note: We intentionally do NOT register app_mention - when a user @mentions the bot,
+# Slack sends BOTH a message event AND an app_mention event. The message handler
+# already processes mentions (checks bot_mentioned), so handling app_mention would
+# cause commands to run twice.
 
 
 @app.event("file_shared")
