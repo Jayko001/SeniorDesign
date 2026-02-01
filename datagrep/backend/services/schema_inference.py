@@ -118,10 +118,13 @@ def infer_schema_postgres(config: Dict[str, Any]) -> Dict[str, Any]:
         Dictionary with schema information
     """
     # Support Supabase connection
-    supabase_url = config.get("supabase_url")
-    supabase_key = config.get("supabase_key")
+    supabase_url = config.get("supabase_url") or os.getenv("SUPABASE_URL")
+    supabase_key = config.get("supabase_key") or os.getenv("SUPABASE_KEY")
     table_name = config.get("table_name")
     
+    if (supabase_url or supabase_key) and not (supabase_url and supabase_key):
+        raise ValueError("Both supabase_url and supabase_key are required for Supabase schema inference")
+
     if supabase_url and supabase_key:
         # Use Supabase connection
         from supabase import create_client, Client
@@ -157,12 +160,18 @@ def infer_schema_postgres(config: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("table_name is required for Supabase schema inference")
     
     # Direct PostgreSQL connection
+    port_value = config.get("port") or os.getenv("POSTGRES_PORT", 5432)
+    try:
+        port_value = int(port_value)
+    except (TypeError, ValueError):
+        pass
+
     conn_params = {
-        "host": config.get("host"),
-        "port": config.get("port", 5432),
-        "database": config.get("database"),
-        "user": config.get("user"),
-        "password": config.get("password")
+        "host": config.get("host") or os.getenv("POSTGRES_HOST"),
+        "port": port_value,
+        "database": config.get("database") or os.getenv("POSTGRES_DB"),
+        "user": config.get("user") or os.getenv("POSTGRES_USER"),
+        "password": config.get("password") or os.getenv("POSTGRES_PASSWORD")
     }
     
     if not all([conn_params["host"], conn_params["database"], conn_params["user"]]):
@@ -228,4 +237,3 @@ def _infer_type_from_value(value: Any) -> str:
         return "text"
     else:
         return "text"
-

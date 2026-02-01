@@ -8,6 +8,7 @@ function App() {
   const [naturalLanguage, setNaturalLanguage] = useState('');
   const [sourceType, setSourceType] = useState('csv');
   const [file, setFile] = useState(null);
+  const [tableName, setTableName] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -20,6 +21,10 @@ function App() {
   const inferSchema = async () => {
     if (sourceType === 'csv' && !file) {
       setError('Please upload a CSV file');
+      return;
+    }
+    if (sourceType === 'postgres' && !tableName.trim()) {
+      setError('Please enter a table name');
       return;
     }
 
@@ -44,8 +49,26 @@ function App() {
 
         setSchema(response.data.schema);
       } else {
-        // For PostgreSQL, you would need connection details
-        setError('PostgreSQL schema inference requires connection details. Please use the API directly.');
+        const sourceConfig = {
+          table_name: tableName.trim(),
+        };
+
+        if (process.env.REACT_APP_SUPABASE_URL) {
+          sourceConfig.supabase_url = process.env.REACT_APP_SUPABASE_URL;
+        }
+        if (process.env.REACT_APP_SUPABASE_KEY) {
+          sourceConfig.supabase_key = process.env.REACT_APP_SUPABASE_KEY;
+        }
+
+        const response = await axios.post(
+          `${API_BASE_URL}/api/schema/infer`,
+          {
+            source_type: sourceType,
+            source_config: sourceConfig,
+          }
+        );
+
+        setSchema(response.data.schema);
       }
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Failed to infer schema');
@@ -62,6 +85,10 @@ function App() {
 
     if (sourceType === 'csv' && !file) {
       setError('Please upload a CSV file');
+      return;
+    }
+    if (sourceType === 'postgres' && !tableName.trim()) {
+      setError('Please enter a table name');
       return;
     }
 
@@ -89,12 +116,16 @@ function App() {
           }
         );
       } else {
-        // PostgreSQL config would come from user input
         const sourceConfig = {
-          supabase_url: process.env.REACT_APP_SUPABASE_URL,
-          supabase_key: process.env.REACT_APP_SUPABASE_KEY,
-          table_name: 'your_table_name', // This should come from user input
+          table_name: tableName.trim(),
         };
+
+        if (process.env.REACT_APP_SUPABASE_URL) {
+          sourceConfig.supabase_url = process.env.REACT_APP_SUPABASE_URL;
+        }
+        if (process.env.REACT_APP_SUPABASE_KEY) {
+          sourceConfig.supabase_key = process.env.REACT_APP_SUPABASE_KEY;
+        }
 
         const requestData = {
           natural_language: naturalLanguage,
@@ -197,6 +228,20 @@ function App() {
               </div>
             )}
 
+            {sourceType === 'postgres' && (
+              <div className="form-group">
+                <label htmlFor="tableName">Supabase Table Name</label>
+                <input
+                  id="tableName"
+                  type="text"
+                  value={tableName}
+                  onChange={(e) => setTableName(e.target.value)}
+                  placeholder="e.g., employees"
+                  className="text-input"
+                />
+              </div>
+            )}
+
             <div className="form-group">
               <label htmlFor="nlInput">Describe what you want to do with the data</label>
               <textarea
@@ -212,14 +257,22 @@ function App() {
             <div className="button-group">
               <button
                 onClick={inferSchema}
-                disabled={loading || (sourceType === 'csv' && !file)}
+                disabled={
+                  loading ||
+                  (sourceType === 'csv' && !file) ||
+                  (sourceType === 'postgres' && !tableName.trim())
+                }
                 className="btn btn-secondary"
               >
                 {loading ? 'Inferring...' : 'Infer Schema'}
               </button>
               <button
                 onClick={generatePipeline}
-                disabled={loading || !naturalLanguage.trim()}
+                disabled={
+                  loading ||
+                  !naturalLanguage.trim() ||
+                  (sourceType === 'postgres' && !tableName.trim())
+                }
                 className="btn btn-primary"
               >
                 {loading ? 'Generating...' : 'Generate Pipeline'}
@@ -281,4 +334,3 @@ function App() {
 }
 
 export default App;
-

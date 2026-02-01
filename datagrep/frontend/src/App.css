@@ -49,6 +49,7 @@
 }
 
 .select-input,
+.text-input,
 .textarea-input {
   width: 100%;
   padding: 12px;
@@ -190,4 +191,3 @@
   margin: 4px 0;
   color: #666;
 }
-
