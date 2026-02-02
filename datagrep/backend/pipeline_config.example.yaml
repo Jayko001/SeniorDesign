@@ -1,0 +1,25 @@
+# Multi-source pipeline configuration example
+# Use with POST /api/pipeline/generate-multi or /api/pipeline/generate-multi-and-execute
+
+sources:
+  - id: employees
+    type: postgres
+    config:
+      table_name: employees
+      # Connection from env: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+      # Or use Supabase: supabase_url, supabase_key
+
+  - id: departments
+    type: csv
+    config:
+      file_path: /path/to/departments.csv
+      # For upload flow, use the temp path returned after upload
+
+relationships:
+  # employees.dept_id references departments.id
+  - from: { source: employees, column: dept_id }
+    to:   { source: departments, column: id }
+
+  # Add more relationships as needed:
+  # - from: { source: employees, column: manager_id }
+  #   to:   { source: employees, column: id }

@@ -13,7 +13,9 @@ import tempfile
 from dotenv import load_dotenv
 
 from services.schema_inference import infer_schema_csv, infer_schema_postgres
-from services.pipeline_generator import generate_pipeline
+from services.pipeline_generator import generate_pipeline, generate_multi_source_pipeline
+from services.config_loader import load_pipeline_config
+from services.unified_schema import build_unified_schema
 from services.supabase_client import get_supabase_client
 from services.code_executor import execute_python_code
 
@@ -43,6 +45,14 @@ class SchemaRequest(BaseModel):
     """Request model for schema inference"""
     source_type: str  # "csv" or "postgres"
     source_config: Dict[str, Any]
+
+
+class MultiSourcePipelineRequest(BaseModel):
+    """Request model for multi-source pipeline generation"""
+    natural_language: str
+    pipeline_config: Optional[Dict[str, Any]] = None  # Inline config with sources and relationships
+    config_path: Optional[str] = None  # Alternative: path to config file (server-side)
+    transformations: Optional[List[str]] = None
 
 
 class ExecuteRequest(BaseModel):
@@ -282,6 +292,103 @@ async def generate_and_execute_pipeline(request: PipelineRequest):
     
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _resolve_multi_source_config(
+    pipeline_config: Optional[Dict[str, Any]],
+    config_path: Optional[str],
+) -> Dict[str, Any]:
+    """Resolve config from inline dict or file path."""
+    if config_path:
+        return load_pipeline_config(config_path)
+    if pipeline_config:
+        return load_pipeline_config(pipeline_config)
+    raise HTTPException(
+        status_code=400,
+        detail="Either pipeline_config (inline) or config_path must be provided",
+    )
+
+
+def _collect_execution_params(unified_schema: Dict[str, Any]) -> tuple:
+    """Collect file_paths and db_config from unified schema for execution."""
+    file_paths: List[str] = []
+    db_config: Optional[Dict[str, Any]] = None
+
+    for src in unified_schema.get("sources", []):
+        src_type = src.get("type")
+        config = src.get("config", {})
+        if src_type == "csv":
+            fp = config.get("file_path")
+            if fp and os.path.exists(fp):
+                file_paths.append(fp)
+        elif src_type == "postgres" and db_config is None:
+            db_config = config
+
+    return file_paths, db_config
+
+
+@app.post("/api/pipeline/generate-multi")
+async def generate_multi_source_pipeline_endpoint(request: MultiSourcePipelineRequest):
+    """
+    Generate pipeline from natural language and multi-source config with relationships.
+    """
+    try:
+        config = _resolve_multi_source_config(
+            request.pipeline_config, request.config_path
+        )
+        unified_schema = build_unified_schema(config)
+        pipeline = await generate_multi_source_pipeline(
+            natural_language=request.natural_language,
+            unified_schema=unified_schema,
+            transformations=request.transformations,
+        )
+        return {
+            "pipeline": pipeline,
+            "unified_schema": unified_schema,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/pipeline/generate-multi-and-execute")
+async def generate_multi_source_and_execute(request: MultiSourcePipelineRequest):
+    """
+    Generate multi-source pipeline and execute it immediately.
+    """
+    try:
+        config = _resolve_multi_source_config(
+            request.pipeline_config, request.config_path
+        )
+        unified_schema = build_unified_schema(config)
+        pipeline = await generate_multi_source_pipeline(
+            natural_language=request.natural_language,
+            unified_schema=unified_schema,
+            transformations=request.transformations,
+        )
+
+        file_paths, db_config = _collect_execution_params(unified_schema)
+        execution_result = await execute_python_code(
+            code=pipeline.get("code", ""),
+            file_paths=file_paths if file_paths else None,
+            db_config=db_config,
+            timeout=60,
+        )
+
+        return {
+            "pipeline": pipeline,
+            "execution": execution_result,
+            "unified_schema": unified_schema,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

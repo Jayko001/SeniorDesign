@@ -11,4 +11,5 @@ slack-bolt==1.18.0
 slack-sdk==3.27.1
 requests==2.31.0
 docker==6.1.3
+pyyaml==6.0.1
 
