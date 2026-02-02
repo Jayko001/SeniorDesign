@@ -1,0 +1,23 @@
+# Multi-source pipeline config for Slack
+#
+# Paths are relative to the backend dir (datagrep/backend/) when the Slack bot runs.
+# Run: @datagrep generate multi-source pipeline: <description>
+#
+# Example: Join employees with departments and show average salary by department
+
+sources:
+  - id: employees
+    type: csv
+    config:
+      file_path: ../sample_data/employees.csv
+
+  - id: departments
+    type: postgres
+    config:
+      table_name: departments
+      # Connection from env: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+
+relationships:
+  # employees.department_id -> departments.id
+  - from: { source: employees, column: department_id }
+    to:   { source: departments, column: id }

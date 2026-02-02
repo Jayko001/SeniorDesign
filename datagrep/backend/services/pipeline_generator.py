@@ -205,6 +205,174 @@ Just output raw executable Python.
     return prompt
 
 
+async def generate_multi_source_pipeline(
+    natural_language: str,
+    unified_schema: Dict[str, Any],
+    transformations: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Generate pipeline code for multiple data sources with defined relationships.
+
+    Args:
+        natural_language: User's request in plain English
+        unified_schema: Output from build_unified_schema (sources + relationships)
+        transformations: Optional list of specific transformations
+
+    Returns:
+        Dictionary containing generated pipeline code and metadata
+    """
+    prompt = _build_multi_source_prompt(
+        natural_language=natural_language,
+        unified_schema=unified_schema,
+        transformations=transformations,
+    )
+
+    try:
+        client = get_openai_client()
+    except ValueError as e:
+        raise Exception(f"OpenAI API key not configured: {str(e)}")
+
+    models_to_try = ["gpt-4", "gpt-3.5-turbo"]
+    last_error = None
+
+    for model in models_to_try:
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an expert data engineer. Generate production-ready data pipeline "
+                            "code that combines multiple data sources (PostgreSQL and CSV) using the "
+                            "provided join relationships. Always return valid Python code."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+
+            generated_code = response.choices[0].message.content
+            pipeline = _parse_pipeline_response(generated_code, "python")
+
+            return {
+                "code": pipeline["code"],
+                "language": pipeline["language"],
+                "description": pipeline.get("description", ""),
+                "steps": pipeline.get("steps", []),
+                "dependencies": pipeline.get("dependencies", []),
+                "source_type": "multi",
+                "model_used": model,
+            }
+
+        except APIConnectionError as e:
+            last_error = (
+                f"Connection error: Unable to connect to OpenAI API. "
+                f"Please check your internet connection and API key. Details: {str(e)}"
+            )
+            break
+        except RateLimitError as e:
+            last_error = f"Rate limit error: {str(e)}. Please try again later."
+            break
+        except APIError as e:
+            last_error = f"OpenAI API error: {str(e)}"
+            continue
+        except Exception as e:
+            last_error = f"Unexpected error: {str(e)}"
+            continue
+
+    raise Exception(f"Failed to generate pipeline: {last_error}")
+
+
+def _build_multi_source_prompt(
+    natural_language: str,
+    unified_schema: Dict[str, Any],
+    transformations: Optional[List[str]] = None,
+) -> str:
+    """Build the prompt for multi-source pipeline generation."""
+    sources = unified_schema.get("sources", [])
+    relationships = unified_schema.get("relationships", [])
+
+    sources_section = []
+    for src in sources:
+        src_id = src["id"]
+        src_type = src["type"]
+        schema = src.get("schema", {})
+        config = src.get("config", {})
+
+        block = f"\n### Source: {src_id} (type: {src_type})\n"
+        block += f"Config: {json.dumps(config, indent=2)}\n"
+        block += f"Schema:\n{json.dumps(schema, indent=2)}\n"
+        sources_section.append(block)
+
+    rels_str = json.dumps(relationships, indent=2)
+
+    prompt = f"""Generate a data pipeline that combines MULTIPLE data sources based on the following:
+
+USER REQUEST:
+{natural_language}
+
+DATA SOURCES:
+{"".join(sources_section)}
+
+RELATIONSHIPS (use these for JOINs - from.column joins to to.column):
+{rels_str}
+"""
+
+    if transformations:
+        prompt += f"\nSPECIFIC TRANSFORMATIONS REQUESTED:\n{json.dumps(transformations, indent=2)}\n\n"
+
+    # Build execution instructions for each source type
+    csv_instructions = []
+    postgres_instructions = []
+    csv_mounts = []
+
+    for src in sources:
+        src_id = src["id"]
+        src_type = src["type"]
+        config = src.get("config", {})
+        if src_type == "csv":
+            file_path = config.get("file_path", "")
+            csv_filename = os.path.basename(file_path) if file_path else f"{src_id}.csv"
+            csv_mount_path = f"/data/{csv_filename}"
+            csv_mounts.append((src_id, csv_mount_path, file_path))
+        elif src_type == "postgres":
+            postgres_instructions.append((src_id, config.get("table_name", "")))
+
+    # Build explicit load instructions per source
+    prompt += "\nYOU MUST LOAD EACH SOURCE EXPLICITLY. Define a variable for each source:\n\n"
+
+    for src_id, mount_path, _ in csv_mounts:
+        prompt += f"- {src_id} = pd.read_csv('{mount_path}')\n"
+
+    if postgres_instructions:
+        prompt += "\nFor Postgres sources, you MUST (import os and psycopg2.extras):\n"
+        prompt += "1. conn = psycopg2.connect(host=os.getenv('POSTGRES_HOST'), port=os.getenv('POSTGRES_PORT'), dbname=os.getenv('POSTGRES_DB'), user=os.getenv('POSTGRES_USER'), password=os.getenv('POSTGRES_PASSWORD'), sslmode='require')\n"
+        prompt += "2. cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)\n"
+        prompt += "3. cur.execute('SELECT * FROM table_name'); rows = cur.fetchall()\n"
+        prompt += "4. df = pd.DataFrame(rows); cur.close(); conn.close()\n\n"
+        for src_id, table_name in postgres_instructions:
+            prompt += f"- {src_id} = pd.DataFrame(...)  # from query: SELECT * FROM {table_name}\n"
+
+    prompt += """
+CRITICAL: Every source variable (employees, departments, etc.) MUST be defined by your code.
+Do NOT reference any DataFrame that you have not explicitly loaded from CSV or queried from Postgres.
+If a source comes from Postgres, you MUST write the psycopg2 connection and query code to load it.
+
+Then:
+1. Join using RELATIONSHIPS: from.column = to.column (e.g., employees.dept_id = departments.id)
+2. Apply the user's requested transformations
+3. Output: print(json.dumps(result.to_dict(orient='records'), default=str))
+
+- Include try/except and proper error handling
+- Return ONLY raw Python code. No markdown, no code blocks.
+"""
+
+    return prompt
+
+
 def _parse_pipeline_response(response: str, source_type: str) -> Dict[str, Any]:
     """Parse OpenAI response to extract pipeline code - expects direct code output, not JSON"""
     
