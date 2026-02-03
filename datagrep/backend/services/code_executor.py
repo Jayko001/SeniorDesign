@@ -28,6 +28,72 @@ def get_docker_client():
     return _docker_client
 
 
+def _derive_supabase_host(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    try:
+        # SUPABASE_URL is like https://<ref>.supabase.co
+        ref = url.split("//", 1)[1].split(".", 1)[0]
+        return f"db.{ref}.supabase.co"
+    except Exception:
+        return None
+
+
+def _build_env_vars(db_config: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    env_vars: Dict[str, str] = {}
+    db_config = db_config or {}
+
+    supabase_url = db_config.get("supabase_url") or os.getenv("SUPABASE_URL")
+    supabase_key = db_config.get("supabase_key") or os.getenv("SUPABASE_KEY")
+    if supabase_url:
+        env_vars["SUPABASE_URL"] = supabase_url
+    if supabase_key:
+        env_vars["SUPABASE_KEY"] = supabase_key
+
+    env_vars["POSTGRES_HOST"] = (
+        db_config.get("host")
+        or os.getenv("POSTGRES_HOST")
+        or _derive_supabase_host(supabase_url)
+    )
+    env_vars["POSTGRES_PORT"] = str(db_config.get("port") or os.getenv("POSTGRES_PORT") or "5432")
+    env_vars["POSTGRES_DB"] = db_config.get("database") or os.getenv("POSTGRES_DB") or "postgres"
+    env_vars["POSTGRES_USER"] = db_config.get("user") or os.getenv("POSTGRES_USER") or "postgres"
+    env_vars["POSTGRES_PASSWORD"] = db_config.get("password") or os.getenv("POSTGRES_PASSWORD")
+
+    if not env_vars["POSTGRES_HOST"]:
+        raise ValueError("POSTGRES_HOST is not set. Provide Supabase Postgres host via env or db_config.")
+    if not env_vars["POSTGRES_PASSWORD"]:
+        raise ValueError("POSTGRES_PASSWORD is not set. Provide Supabase Postgres password via env or db_config.")
+
+    env_vars["PGHOST"] = env_vars["POSTGRES_HOST"]
+    env_vars["PGPORT"] = env_vars["POSTGRES_PORT"]
+    env_vars["PGDATABASE"] = env_vars["POSTGRES_DB"]
+    env_vars["PGUSER"] = env_vars["POSTGRES_USER"]
+    env_vars["PGPASSWORD"] = env_vars["POSTGRES_PASSWORD"]
+    env_vars["PGSSLMODE"] = db_config.get("sslmode") or os.getenv("PGSSLMODE") or "require"
+    return env_vars
+
+
+def _resolve_network_name(client, db_config: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not db_config:
+        return None
+    target_network = "datagrep-network"
+    try:
+        networks = client.networks.list()
+        network_names = [net.name for net in networks]
+        possible_names = [
+            target_network,
+            f"datagrep_{target_network}",
+            f"{os.path.basename(os.getcwd())}_{target_network}"
+        ]
+        for possible_name in possible_names:
+            if possible_name in network_names:
+                return possible_name
+    except Exception:
+        return None
+    return None
+
+
 async def execute_python_code(
     code: str,
     file_paths: List[str] = None,
@@ -61,59 +127,12 @@ async def execute_python_code(
     if file_paths:
         for file_path in file_paths:
             if os.path.exists(file_path):
-                # Mount files as read-only
                 binds[file_path] = {
                     "bind": f"/data/{os.path.basename(file_path)}",
                     "mode": "ro"
                 }
     
-    # Prepare environment variables (support both Supabase and direct Postgres)
-    env_vars = {}
-    db_config = db_config or {}
-
-    # Supabase credentials (used by supabase-py client inside sandbox)
-    supabase_url = db_config.get("supabase_url") or os.getenv("SUPABASE_URL")
-    supabase_key = db_config.get("supabase_key") or os.getenv("SUPABASE_KEY")
-    if supabase_url:
-        env_vars["SUPABASE_URL"] = supabase_url
-    if supabase_key:
-        env_vars["SUPABASE_KEY"] = supabase_key
-
-    # Derive Supabase Postgres host from URL if explicit host not provided
-    def _derive_supabase_host(url: Optional[str]) -> Optional[str]:
-        if not url:
-            return None
-        try:
-            # SUPABASE_URL is like https://<ref>.supabase.co
-            ref = url.split("//", 1)[1].split(".", 1)[0]
-            return f"db.{ref}.supabase.co"
-        except Exception:
-            return None
-
-    # PostgreSQL connection details (Supabase exposes Postgres)
-    env_vars["POSTGRES_HOST"] = (
-        db_config.get("host")
-        or os.getenv("POSTGRES_HOST")
-        or _derive_supabase_host(supabase_url)
-    )
-    env_vars["POSTGRES_PORT"] = str(db_config.get("port") or os.getenv("POSTGRES_PORT") or "5432")
-    env_vars["POSTGRES_DB"] = db_config.get("database") or os.getenv("POSTGRES_DB") or "postgres"
-    env_vars["POSTGRES_USER"] = db_config.get("user") or os.getenv("POSTGRES_USER") or "postgres"
-    env_vars["POSTGRES_PASSWORD"] = db_config.get("password") or os.getenv("POSTGRES_PASSWORD")
-
-    # If still missing critical pieces, raise early to avoid psycopg falling back to unix sockets
-    if not env_vars["POSTGRES_HOST"]:
-        raise ValueError("POSTGRES_HOST is not set. Provide Supabase Postgres host via env or db_config.")
-    if not env_vars["POSTGRES_PASSWORD"]:
-        raise ValueError("POSTGRES_PASSWORD is not set. Provide Supabase Postgres password via env or db_config.")
-
-    # Also expose common PG* aliases for libraries that look for them (non-breaking)
-    env_vars["PGHOST"] = env_vars["POSTGRES_HOST"]
-    env_vars["PGPORT"] = env_vars["POSTGRES_PORT"]
-    env_vars["PGDATABASE"] = env_vars["POSTGRES_DB"]
-    env_vars["PGUSER"] = env_vars["POSTGRES_USER"]
-    env_vars["PGPASSWORD"] = env_vars["POSTGRES_PASSWORD"]
-    env_vars["PGSSLMODE"] = db_config.get("sslmode") or os.getenv("PGSSLMODE") or "require"
+    env_vars = _build_env_vars(db_config)
     
     # Create temporary file for code - write it directly without wrapping
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as code_file:
@@ -133,26 +152,7 @@ async def execute_python_code(
         
         # Only use network if db_config is provided (container needs to connect to database)
         # Otherwise use default bridge network (no network parameter needed)
-        network_name = None
-        if db_config:
-            target_network = "datagrep-network"
-            try:
-                networks = client.networks.list()
-                network_names = [net.name for net in networks]
-                # Try exact match first, then docker-compose prefixed names
-                possible_names = [
-                    target_network,
-                    f"datagrep_{target_network}",
-                    f"{os.path.basename(os.getcwd())}_{target_network}"
-                ]
-                for possible_name in possible_names:
-                    if possible_name in network_names:
-                        network_name = possible_name
-                        break
-            except Exception as net_check_error:
-                # If db_config is provided but network not found, this will likely fail when trying to connect to DB
-                # But we'll let it fail naturally rather than complicating the logic
-                network_name = None
+        network_name = _resolve_network_name(client, db_config)
         
         # Run container
         container = None
@@ -293,3 +293,138 @@ def execute_python_code_sync(
             return loop.run_until_complete(execute_python_code(code, file_paths, db_config, timeout))
     except RuntimeError:
         return asyncio.run(execute_python_code(code, file_paths, db_config, timeout))
+
+
+async def execute_python_code_with_output(
+    code: str,
+    output_dir: str,
+    file_paths: List[str] = None,
+    db_config: Dict[str, Any] = None,
+    timeout: int = 60
+) -> Dict[str, Any]:
+    """
+    Execute Python code in a Docker sandbox with a writable /output mount.
+    """
+    start_time = time.time()
+    client = get_docker_client()
+
+    binds = {}
+    if file_paths:
+        for file_path in file_paths:
+            if os.path.exists(file_path):
+                binds[file_path] = {
+                    "bind": f"/data/{os.path.basename(file_path)}",
+                    "mode": "ro"
+                }
+
+    env_vars = _build_env_vars(db_config)
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as code_file:
+        code_file.write(code)
+        code_path = code_file.name
+
+    try:
+        image_name = "datagrep-sandbox:latest"
+
+        volumes_dict = {
+            code_path: {"bind": "/code/script.py", "mode": "ro"},
+            output_dir: {"bind": "/output", "mode": "rw"}
+        }
+        volumes_dict.update(binds)
+
+        network_name = _resolve_network_name(client, db_config)
+
+        container = None
+        try:
+            run_kwargs = {
+                "image": image_name,
+                "command": ["python", "/code/script.py"],
+                "volumes": volumes_dict,
+                "environment": env_vars,
+                "mem_limit": "512m",
+                "cpu_period": 100000,
+                "cpu_quota": 50000,
+                "detach": True,
+                "stdout": True,
+                "stderr": True
+            }
+            if network_name:
+                run_kwargs["network"] = network_name
+
+            container = client.containers.run(**run_kwargs)
+            try:
+                container.wait(timeout=timeout)
+            except Exception:
+                container.stop()
+                raise Exception(f"Container execution timed out after {timeout} seconds")
+
+            container_output = container.logs(stdout=True, stderr=True)
+            output_text = container_output.decode('utf-8') if isinstance(container_output, bytes) else str(container_output)
+            execution_time = time.time() - start_time
+
+            result_data = None
+            output_lines = output_text.strip().split('\n')
+            if output_lines:
+                try:
+                    result_data = json.loads(output_lines[-1])
+                except Exception:
+                    try:
+                        result_data = json.loads(output_text.strip())
+                    except Exception:
+                        pass
+
+            return {
+                "status": "success",
+                "output": output_text,
+                "error": None,
+                "execution_time": round(execution_time, 2),
+                "result_data": result_data
+            }
+
+        except docker.errors.ContainerError as e:
+            execution_time = time.time() - start_time
+            error_msg = str(e)
+            try:
+                if container:
+                    logs = container.logs(stdout=True, stderr=True)
+                    if logs:
+                        error_msg = logs.decode('utf-8') if isinstance(logs, bytes) else str(logs)
+            except Exception:
+                pass
+            return {
+                "status": "error",
+                "output": "",
+                "error": error_msg,
+                "execution_time": round(execution_time, 2),
+                "result_data": None
+            }
+        except docker.errors.ImageNotFound:
+            execution_time = time.time() - start_time
+            return {
+                "status": "error",
+                "output": "",
+                "error": "Sandbox image not found. Please build the sandbox image first.",
+                "execution_time": round(execution_time, 2),
+                "result_data": None
+            }
+        except Exception as e:
+            execution_time = time.time() - start_time
+            return {
+                "status": "error",
+                "output": "",
+                "error": f"Execution failed: {str(e)}",
+                "execution_time": round(execution_time, 2),
+                "result_data": None
+            }
+        finally:
+            if container:
+                try:
+                    container.remove(force=True)
+                except Exception:
+                    pass
+    finally:
+        if os.path.exists(code_path):
+            try:
+                os.remove(code_path)
+            except Exception:
+                pass

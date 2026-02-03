@@ -132,7 +132,12 @@ async def generate_pipeline_endpoint(request: PipelineRequest):
         elif request.source_type == "postgres":
             table_name = request.source_config.get("table_name")
             if table_name:
-                schema = infer_schema_postgres(request.source_config)
+                try:
+                    schema = infer_schema_postgres(request.source_config)
+                except Exception as e:
+                    # Best-effort schema; don't fail pipeline generation on schema inference issues
+                    print(f"[schema_inference_postgres] failed: {e}")
+                    schema = {}
             else:
                 # Skip schema inference when table name is unknown; let LLM rely on description
                 schema = {}
@@ -252,7 +257,11 @@ async def generate_and_execute_pipeline(request: PipelineRequest):
         elif request.source_type == "postgres":
             table_name = request.source_config.get("table_name")
             if table_name:
-                schema = infer_schema_postgres(request.source_config)
+                try:
+                    schema = infer_schema_postgres(request.source_config)
+                except Exception as e:
+                    print(f"[schema_inference_postgres] failed: {e}")
+                    schema = {}
             else:
                 schema = {}
         
