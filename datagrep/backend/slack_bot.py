@@ -7,17 +7,20 @@ import os
 import tempfile
 import asyncio
 import concurrent.futures
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 from dotenv import load_dotenv
 import json
+import shutil
 import requests
 
 from services.schema_inference import infer_schema_csv
 from services.pipeline_generator import generate_pipeline
-from services.code_executor import execute_python_code
+from services.code_executor import execute_python_code, execute_python_code_with_output
+from services.visualization_generator import infer_visualization_spec, build_plot_code
 
 load_dotenv()
 
@@ -157,6 +160,12 @@ def wants_postgres(description: str) -> bool:
     return any(word in description.lower() for word in keywords)
 
 
+def wants_dashboard(description: str) -> bool:
+    """Detect dashboard/visualization intent."""
+    keywords = ["dashboard", "visualize", "visualization", "chart", "plot", "graph"]
+    return any(word in description.lower() for word in keywords)
+
+
 def extract_table_name(description: str) -> str:
     """Very lightweight table name extractor (looks for 'table <name>' or 'from <name>')."""
     tokens = description.lower().split()
@@ -166,6 +175,24 @@ def extract_table_name(description: str) -> str:
         if tok == "from" and i + 1 < len(tokens):
             return tokens[i + 1].strip(",.;")
     return ""
+
+
+def upload_image_to_slack(channel_id: str, image_path: str, title: str = "Dashboard") -> Optional[str]:
+    """Upload an image file to Slack. Returns error string on failure."""
+    try:
+        # files.upload is deprecated; use files_upload_v2
+        client.files_upload_v2(
+            channels=channel_id,
+            file=image_path,
+            filename=os.path.basename(image_path),
+            title=title
+        )
+        return None
+    except SlackApiError as e:
+        err = e.response.get("error") if e.response else str(e)
+        return err
+    except Exception as e:
+        return str(e)
 
 
 @app.message("")
@@ -236,11 +263,22 @@ def handle_message(message, say):
             say("Please provide a description of the pipeline you want to generate.\nExample: `generate pipeline: Filter rows where age > 25`")
             return
         
+        dashboard_requested = wants_dashboard(description)
+
         if csv_file_path:
             # Generate pipeline from CSV
             try:
                 auto_execute = "no execute" not in cleaned_text.lower() and "skip execute" not in cleaned_text.lower()
-                run_async(handle_pipeline_generation(say, description, csv_file_path, auto_execute=auto_execute))
+                if dashboard_requested:
+                    auto_execute = True
+                run_async(handle_pipeline_generation(
+                    say,
+                    description,
+                    csv_file_path,
+                    auto_execute=auto_execute,
+                    channel_id=channel_id,
+                    wants_dashboard=dashboard_requested
+                ))
             except Exception as e:
                 say(f"Error generating pipeline: {str(e)}")
             finally:
@@ -256,7 +294,12 @@ def handle_message(message, say):
                     "source_config": {"table_name": table_name} if table_name else {}
                 }
                 resp = requests.post(f"{API_BASE_URL}/api/pipeline/generate", json=payload)
-                resp.raise_for_status()
+                if not resp.ok:
+                    try:
+                        err_detail = resp.json()
+                    except Exception:
+                        err_detail = resp.text
+                    raise Exception(f"{resp.status_code} {resp.reason}: {err_detail}")
                 data = resp.json()
                 pipeline = data.get("pipeline", {})
                 schema = data.get("schema")
@@ -310,6 +353,14 @@ def handle_message(message, say):
                                 result_json = result_json[:1500] + "\n... (truncated)"
                             exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
                         say("\n".join(exec_parts))
+
+                        if dashboard_requested and execution_result.get("result_data"):
+                            generate_dashboard_and_upload(
+                                say,
+                                channel_id,
+                                description,
+                                execution_result.get("result_data")
+                            )
                     except Exception as e:
                         say(f"*Execution Error:* {str(e)}")
             except Exception as e:
@@ -343,7 +394,14 @@ def handle_message(message, say):
             say("I didn't understand that. Type `help` for available commands.")
 
 
-async def handle_pipeline_generation(say, description: str, csv_file_path: str, auto_execute: bool = True):
+async def handle_pipeline_generation(
+    say,
+    description: str,
+    csv_file_path: str,
+    auto_execute: bool = True,
+    channel_id: Optional[str] = None,
+    wants_dashboard: bool = False
+):
     """Handle pipeline generation request"""
     try:
         # Infer schema first
@@ -416,6 +474,14 @@ async def handle_pipeline_generation(say, description: str, csv_file_path: str, 
                         exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
                 
                 say("\n".join(exec_parts))
+
+                if wants_dashboard and channel_id and execution_result.get("result_data"):
+                    generate_dashboard_and_upload(
+                        say,
+                        channel_id,
+                        description,
+                        execution_result.get("result_data")
+                    )
             
             except Exception as e:
                 say(f"*Execution Error:* {str(e)}")
@@ -517,7 +583,54 @@ def handle_schema_inference(say, csv_file_path: str):
         say(response)
     except Exception as e:
         say(f"Error inferring schema: {str(e)}")
-        raise
+
+
+def generate_dashboard_and_upload(say, channel_id: str, description: str, result_data: Any):
+    """Generate a visualization from result data and upload to Slack."""
+    if not result_data:
+        say("No data returned to visualize.")
+        return
+
+    try:
+        viz_spec = infer_visualization_spec(description, result_data)
+    except Exception as e:
+        say(f"Error inferring visualization: {str(e)}")
+        return
+
+    plot_code = build_plot_code(viz_spec, result_data)
+    output_dir = tempfile.mkdtemp(prefix="datagrep_viz_")
+    try:
+        os.chmod(output_dir, 0o777)
+    except Exception:
+        pass
+
+    try:
+        exec_result = run_async(execute_python_code_with_output(
+            code=plot_code,
+            output_dir=output_dir,
+            file_paths=None,
+            db_config={},  # uses env for any required defaults
+            timeout=60
+        ))
+        if exec_result.get("status") != "success":
+            say(f"Visualization failed: {exec_result.get('error')}")
+            return
+
+        image_path = os.path.join(output_dir, "plot.png")
+        if os.path.exists(image_path):
+            err = upload_image_to_slack(channel_id, image_path, title=viz_spec.get("title", "Dashboard"))
+            if err:
+                if err == "missing_scope":
+                    say("Cannot upload image: Slack app is missing `files:write` scope. Add it, reinstall the app, then retry.")
+                else:
+                    say(f"Image upload failed: {err}")
+        else:
+            say("Visualization did not produce an image.")
+    finally:
+        try:
+            shutil.rmtree(output_dir)
+        except Exception:
+            pass
 
 
 # Note: We intentionally do NOT register app_mention - when a user @mentions the bot,
