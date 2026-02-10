@@ -52,7 +52,7 @@ Datagrep is a platform for data exploration, pipeline generation, and visualizat
 **Steps**
 1. **Clone the repository:**
   ```sh
-  git clone https://github.com/your-org/datagrep.git
+  git clone https://github.com/Jayko001/SeniorDesign.git
   cd datagrep
   ```
 2. **Set up environment variables:**
@@ -85,10 +85,9 @@ Datagrep is a platform for data exploration, pipeline generation, and visualizat
 4. **Visualization:**
   - Generate charts and graphs from your data.
 
-*Screenshot placeholders:*
-- ![Home Page](datagrep/images/web_home_placeholder.png)
-- ![Upload Data](datagrep/images/upload_placeholder.png)
-- ![Visualization](datagrep/images/visualization_placeholder.png)
+*Screenshot:*
+- ![Home Page](datagrep/images/web_home.png)
+- ![Visualization](datagrep/images/visualization.png)
 
 ---
 
@@ -97,10 +96,7 @@ Datagrep is a platform for data exploration, pipeline generation, and visualizat
 1. **Add the Slack bot to your workspace.**
 2. **Configure environment variables as described in `datagrep/SLACK_BOT_README.md`.**
 3. **Interact with the bot:**
-  - Use `/datagrep` commands in Slack to query data, generate pipelines, or request visualizations.
-
-*Screenshot placeholder:*
-- ![Slack Bot Example](datagrep/images/slack_bot_placeholder.png)
+  - @DatagrepBot in Slack to query data, generate pipelines, or request visualizations.
 
 ---
 
@@ -116,9 +112,6 @@ Datagrep is a platform for data exploration, pipeline generation, and visualizat
 
 **Q: Do I need coding experience to use Datagrep?**
 A: No, the web interface is designed for all users. Advanced features may require some data knowledge.
-
-**Q: How do I reset my password?**
-A: Use the 'Forgot Password' link on the login page.
 
 **Q: Can I use my own data?**
 A: Yes, upload your datasets via the web interface.
