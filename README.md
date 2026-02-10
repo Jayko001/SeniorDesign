@@ -1,5 +1,8 @@
 # Senior Design — Final Fall Design Report
 
+**[Datagrep User Guide & Manual](datagrep/USER_GUIDE.md)**  
+Step-by-step instructions, FAQ, and troubleshooting for using Datagrep's web interface and Slack bot.
+
 This repository is the consolidated Fall design report for Datagrep, our AI agent that designs, tests, and deploys data pipelines from plain-English requests. Each section below links to the final deliverables.
 
 ## Table of Contents
