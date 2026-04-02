@@ -197,6 +197,7 @@ Include in the generated code:
 - Use RealDictCursor to get dict rows
 - try/except/finally with safe cleanup; initialize conn/cur to None
 - If an error occurs, print the error message
+- Print the final result as JSON on the LAST line (so it can be parsed)
 
 IMPORTANT: Return ONLY the Python code directly. Do NOT wrap it in JSON or markdown code blocks.
 Just output raw executable Python.

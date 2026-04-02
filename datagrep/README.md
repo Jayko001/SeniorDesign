@@ -1,5 +1,8 @@
 # Datagrep MVP
 
+**[User Guide & Manual](USER_GUIDE.md)**  
+Find step-by-step instructions, FAQ, and troubleshooting for using Datagrep's web interface and Slack bot.
+
 AI-powered data pipeline generator that converts natural language requests into executable data pipelines.
 
 ## Features
