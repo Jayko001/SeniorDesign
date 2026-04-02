@@ -110,6 +110,10 @@ def validate_config_structure(config: Dict[str, Any]) -> None:
                 "(or use env vars for connection)"
             )
 
+        source_schema = src.get("schema")
+        if source_schema is not None:
+            _validate_source_schema(src_id, source_schema)
+
     relationships = config.get("relationships")
     if relationships is None:
         config["relationships"] = []
@@ -137,3 +141,27 @@ def validate_config_structure(config: Dict[str, Any]) -> None:
                     f"Relationship references unknown source '{side['source']}'. "
                     f"Valid source ids: {sorted(source_ids)}"
                 )
+
+
+def _validate_source_schema(source_id: str, source_schema: Any) -> None:
+    """Validate optional per-source schema provided in pipeline config."""
+    if not isinstance(source_schema, list):
+        raise ValueError(
+            f"Source '{source_id}' schema must be a list of column definitions"
+        )
+
+    for i, col in enumerate(source_schema):
+        if not isinstance(col, dict):
+            raise ValueError(
+                f"Source '{source_id}' schema entry at index {i} must be a dictionary"
+            )
+        col_name = col.get("name")
+        col_type = col.get("type")
+        if not isinstance(col_name, str) or not col_name.strip():
+            raise ValueError(
+                f"Source '{source_id}' schema entry at index {i} must include non-empty 'name'"
+            )
+        if not isinstance(col_type, str) or not col_type.strip():
+            raise ValueError(
+                f"Source '{source_id}' schema entry '{col_name or i}' must include non-empty 'type'"
+            )

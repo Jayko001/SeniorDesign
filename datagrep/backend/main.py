@@ -338,6 +338,16 @@ def _collect_execution_params(unified_schema: Dict[str, Any]) -> tuple:
     return file_paths, db_config
 
 
+def _collect_schema_source_summary(unified_schema: Dict[str, Any]) -> Dict[str, int]:
+    """Count how many source schemas came from YAML vs inference."""
+    summary = {"yaml": 0, "inferred": 0}
+    for src in unified_schema.get("sources", []):
+        schema_source = src.get("schema_source")
+        if schema_source in summary:
+            summary[schema_source] += 1
+    return summary
+
+
 @app.post("/api/pipeline/generate-multi")
 async def generate_multi_source_pipeline_endpoint(request: MultiSourcePipelineRequest):
     """
@@ -356,6 +366,7 @@ async def generate_multi_source_pipeline_endpoint(request: MultiSourcePipelineRe
         return {
             "pipeline": pipeline,
             "unified_schema": unified_schema,
+            "schema_source_summary": _collect_schema_source_summary(unified_schema),
         }
     except HTTPException:
         raise
@@ -393,6 +404,7 @@ async def generate_multi_source_and_execute(request: MultiSourcePipelineRequest)
             "pipeline": pipeline,
             "execution": execution_result,
             "unified_schema": unified_schema,
+            "schema_source_summary": _collect_schema_source_summary(unified_schema),
         }
     except HTTPException:
         raise

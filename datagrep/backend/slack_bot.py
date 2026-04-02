@@ -527,10 +527,22 @@ async def handle_multi_source_pipeline_slack(
             transformations=None,
         )
 
+        yaml_schema_count = sum(
+            1
+            for src in unified_schema.get("sources", [])
+            if src.get("schema_source") == "yaml"
+        )
+        inferred_schema_count = sum(
+            1
+            for src in unified_schema.get("sources", [])
+            if src.get("schema_source") == "inferred"
+        )
+
         response_parts = [
             "*Multi-Source Pipeline Generated* :rocket:",
             f"\n*Description:* {pipeline.get('description', 'N/A')}",
             f"\n*Sources:* {len(unified_schema['sources'])} source(s)",
+            f"\n*Schema Source:* {yaml_schema_count} from YAML, {inferred_schema_count} inferred",
             f"\n*Relationships:* {len(unified_schema.get('relationships', []))} relationship(s)",
             f"\n*Generated Code:*",
             format_code_block(pipeline.get("code", ""), pipeline.get("language", "python")),

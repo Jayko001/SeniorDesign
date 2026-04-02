@@ -8,6 +8,15 @@ from typing import Dict, Any, List
 from services.schema_inference import infer_schema_csv, infer_schema_postgres
 
 
+def _build_schema_from_yaml(yaml_schema: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Normalize YAML column schema into the internal schema shape."""
+    return {
+        "columns": [dict(col) for col in yaml_schema],
+        "source": "yaml",
+        "column_count": len(yaml_schema),
+    }
+
+
 def build_unified_schema(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Build unified schema from config by inferring each source's schema
@@ -41,11 +50,19 @@ def build_unified_schema(config: Dict[str, Any]) -> Dict[str, Any]:
         src_id = src["id"]
         src_type = src["type"]
         src_config = src["config"]
+        yaml_schema = src.get("schema")
 
-        if src_type == "csv":
+        if isinstance(yaml_schema, list) and len(yaml_schema) > 0:
+            schema = _build_schema_from_yaml(yaml_schema)
+            schema_source = "yaml"
+        elif src_type == "csv":
             schema = infer_schema_csv(src_config)
+            schema["source"] = "inferred"
+            schema_source = "inferred"
         elif src_type == "postgres":
             schema = infer_schema_postgres(src_config)
+            schema["source"] = "inferred"
+            schema_source = "inferred"
         else:
             raise ValueError(f"Unsupported source type: {src_type}")
 
@@ -54,6 +71,7 @@ def build_unified_schema(config: Dict[str, Any]) -> Dict[str, Any]:
             "id": src_id,
             "type": src_type,
             "schema": schema,
+            "schema_source": schema_source,
             "config": src_config,
         })
 

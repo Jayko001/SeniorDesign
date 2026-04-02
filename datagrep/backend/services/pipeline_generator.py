@@ -300,10 +300,12 @@ def _build_multi_source_prompt(
     for src in sources:
         src_id = src["id"]
         src_type = src["type"]
+        schema_source = src.get("schema_source", "unknown")
         schema = src.get("schema", {})
         config = src.get("config", {})
 
         block = f"\n### Source: {src_id} (type: {src_type})\n"
+        block += f"Schema source: {schema_source}\n"
         block += f"Config: {json.dumps(config, indent=2)}\n"
         block += f"Schema:\n{json.dumps(schema, indent=2)}\n"
         sources_section.append(block)

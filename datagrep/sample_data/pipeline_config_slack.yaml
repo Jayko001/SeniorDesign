@@ -1,23 +1,122 @@
 # Multi-source pipeline config for Slack
-#
-# Paths are relative to the backend dir (datagrep/backend/) when the Slack bot runs.
-# Run: @datagrep generate multi-source pipeline: <description>
-#
-# Example: Join employees with departments and show average salary by department
 
 sources:
   - id: employees
     type: csv
     config:
       file_path: ../sample_data/employees.csv
+    schema:
+      - { name: id, type: bigint }
+      - { name: name, type: text }
+      - { name: age, type: bigint }
+      - { name: department_id, type: bigint }
+      - { name: salary, type: bigint }
+      - { name: hire_date, type: text }
 
   - id: departments
     type: postgres
     config:
       table_name: departments
-      # Connection from env: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+    schema:
+      - { name: id, type: bigint }
+      - { name: name, type: text }
+      - { name: budget, type: bigint }
+      - { name: location, type: text }
+      - { name: manager, type: text }
+
+  - id: orders
+    type: postgres
+    config:
+      table_name: orders
+    schema:
+      - { name: order_id, type: bigint }
+      - { name: created_at, type: timestamp with time zone }
+      - { name: website_session_id, type: bigint }
+      - { name: user_id, type: bigint }
+      - { name: primary_product_id, type: bigint }
+      - { name: items_purchased, type: bigint }
+      - { name: price_usd, type: double precision }
+      - { name: cogs_usd, type: double precision }
+
+  - id: order_items
+    type: postgres
+    config:
+      table_name: order_items
+    schema:
+      - { name: order_item_id, type: bigint }
+      - { name: created_at, type: timestamp with time zone }
+      - { name: order_id, type: bigint }
+      - { name: product_id, type: bigint }
+      - { name: is_primary_item, type: text }
+      - { name: price_usd, type: double precision }
+      - { name: cogs_usd, type: double precision }
+
+  - id: order_item_refunds
+    type: postgres
+    config:
+      table_name: order_item_refunds
+    schema:
+      - { name: order_item_refund_id, type: bigint }
+      - { name: created_at, type: timestamp with time zone }
+      - { name: order_item_id, type: bigint }
+      - { name: order_id, type: bigint }
+      - { name: refund_amount_usd, type: double precision }
+
+  - id: products
+    type: postgres
+    config:
+      table_name: products
+    schema:
+      - { name: product_id, type: bigint }
+      - { name: created_at, type: timestamp with time zone }
+      - { name: product_name, type: text }
+
+  - id: website_sessions
+    type: postgres
+    config:
+      table_name: website_sessions
+    schema:
+      - { name: website_session_id, type: bigint }
+      - { name: created_at, type: timestamp with time zone }
+      - { name: user_id, type: bigint }
+      - { name: is_repeat_session, type: text }
+      - { name: utm_source, type: text }
+      - { name: utm_campaign, type: text }
+      - { name: utm_content, type: text }
+      - { name: device_type, type: text }
+      - { name: http_referer, type: text }
+
+  - id: website_pageviews
+    type: postgres
+    config:
+      table_name: website_pageviews
+    schema:
+      - { name: website_pageview_id, type: bigint }
+      - { name: created_at, type: timestamp with time zone }
+      - { name: website_session_id, type: bigint }
+      - { name: pageview_url, type: text }
 
 relationships:
-  # employees.department_id -> departments.id
   - from: { source: employees, column: department_id }
     to:   { source: departments, column: id }
+
+  - from: { source: orders, column: website_session_id }
+    to:   { source: website_sessions, column: website_session_id }
+
+  - from: { source: orders, column: primary_product_id }
+    to:   { source: products, column: product_id }
+
+  - from: { source: order_items, column: order_id }
+    to:   { source: orders, column: order_id }
+
+  - from: { source: order_items, column: product_id }
+    to:   { source: products, column: product_id }
+
+  - from: { source: order_item_refunds, column: order_item_id }
+    to:   { source: order_items, column: order_item_id }
+
+  - from: { source: order_item_refunds, column: order_id }
+    to:   { source: orders, column: order_id }
+
+  - from: { source: website_pageviews, column: website_session_id }
+    to:   { source: website_sessions, column: website_session_id }
