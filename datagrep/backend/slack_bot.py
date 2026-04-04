@@ -8,6 +8,7 @@ import tempfile
 import asyncio
 import concurrent.futures
 import re
+import time
 from typing import Dict, Any, Optional
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -33,6 +34,11 @@ client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
 
 # API base URL (can be configured via env var)
 API_BASE_URL = os.environ.get("DATAGREP_API_URL", "http://localhost:8000")
+PROCESSED_MESSAGE_TTL_SECONDS = 300
+SHOW_SCHEMA_IN_SLACK = False
+SHOW_EXECUTION_RESULTS_IN_SLACK = False
+processed_messages: Dict[str, float] = {}
+recent_files: Dict[str, tuple] = {}
 
 
 def run_async(coro):
@@ -57,6 +63,44 @@ def run_async(coro):
     except RuntimeError:
         # No event loop, create new one
         return asyncio.run(coro)
+
+
+def _prune_processed_messages(now: Optional[float] = None) -> None:
+    """Drop old dedupe entries so the cache stays bounded."""
+    current_time = now if now is not None else time.time()
+    expired_keys = [
+        key for key, seen_at in processed_messages.items()
+        if current_time - seen_at > PROCESSED_MESSAGE_TTL_SECONDS
+    ]
+    for key in expired_keys:
+        processed_messages.pop(key, None)
+
+
+def _message_dedupe_key(body: Optional[Dict[str, Any]], message: Dict[str, Any]) -> Optional[str]:
+    if body and body.get("event_id"):
+        return f"event:{body['event_id']}"
+
+    channel = message.get("channel") or ""
+    user = message.get("user") or ""
+    ts = message.get("client_msg_id") or message.get("ts") or ""
+    text = message.get("text") or ""
+    if not channel or not ts:
+        return None
+    return f"message:{channel}:{user}:{ts}:{text}"
+
+
+def _is_duplicate_message(body: Optional[Dict[str, Any]], message: Dict[str, Any]) -> bool:
+    key = _message_dedupe_key(body, message)
+    if not key:
+        return False
+
+    now = time.time()
+    _prune_processed_messages(now)
+    if key in processed_messages:
+        return True
+
+    processed_messages[key] = now
+    return False
 
 # TODO: add SQL
 def format_code_block(code: str, language: str = "python") -> str:
@@ -225,7 +269,7 @@ def upload_image_to_slack(channel_id: str, image_path: str, title: str = "Dashbo
 
 
 @app.message("")
-def handle_message(message, say):
+def handle_message(message, say, body=None):
     """Handle general messages"""
     text = message.get("text", "").lower()
     user_id = message.get("user")
@@ -233,6 +277,9 @@ def handle_message(message, say):
     
     # Ignore bot messages
     if message.get("bot_id"):
+        return
+
+    if _is_duplicate_message(body, message):
         return
     
     # Reply in thread (or create thread from top-level message)
@@ -350,8 +397,6 @@ def handle_message(message, say):
                     raise Exception(f"{resp.status_code} {resp.reason}: {err_detail}")
                 data = resp.json()
                 pipeline = data.get("pipeline", {})
-                schema = data.get("schema")
-
                 response_parts = [
                     "*Pipeline Generated* :rocket:",
                     f"\n*Description:* {pipeline.get('description', 'N/A')}",
@@ -359,9 +404,9 @@ def handle_message(message, say):
                     f"\n*Generated Code:*",
                     format_code_block(pipeline.get('code', ''), pipeline.get('language', 'python'))
                 ]
-                if schema:
+                if SHOW_SCHEMA_IN_SLACK and data.get("schema"):
                     response_parts.append("\n*Schema (from Postgres/Supabase):*")
-                    response_parts.append(format_code_block(json.dumps(schema, indent=2, default=str), "json"))
+                    response_parts.append(format_code_block(json.dumps(data["schema"], indent=2, default=str), "json"))
                 say("\n".join(response_parts))
 
                 # Auto-execute for Postgres as well
@@ -383,24 +428,25 @@ def handle_message(message, say):
                             db_config=db_config,
                             timeout=60
                         ))
-                        exec_parts = [f"\n*Execution Results* :white_check_mark:" if execution_result["status"] == "success" else "\n*Execution Results* :x:"]
-                        exec_parts.append(f"*Status:* {execution_result['status'].capitalize()} ({execution_result['execution_time']}s)")
-                        if execution_result.get("error"):
-                            error = execution_result["error"]
-                            if len(error) > 1500:
-                                error = error[:1500] + "\n... (truncated)"
-                            exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
-                        if execution_result.get("output"):
-                            output = execution_result["output"]
-                            if len(output) > 1500:
-                                output = output[:1500] + "\n... (truncated)"
-                            exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
-                        if execution_result.get("result_data"):
-                            result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
-                            if len(result_json) > 1500:
-                                result_json = result_json[:1500] + "\n... (truncated)"
-                            exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
-                        say("\n".join(exec_parts))
+                        if SHOW_EXECUTION_RESULTS_IN_SLACK:
+                            exec_parts = [f"\n*Execution Results* :white_check_mark:" if execution_result["status"] == "success" else "\n*Execution Results* :x:"]
+                            exec_parts.append(f"*Status:* {execution_result['status'].capitalize()} ({execution_result['execution_time']}s)")
+                            if execution_result.get("error"):
+                                error = execution_result["error"]
+                                if len(error) > 1500:
+                                    error = error[:1500] + "\n... (truncated)"
+                                exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
+                            if execution_result.get("output"):
+                                output = execution_result["output"]
+                                if len(output) > 1500:
+                                    output = output[:1500] + "\n... (truncated)"
+                                exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                            if execution_result.get("result_data"):
+                                result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
+                                if len(result_json) > 1500:
+                                    result_json = result_json[:1500] + "\n... (truncated)"
+                                exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
+                            say("\n".join(exec_parts))
 
                         if dashboard_requested and execution_result.get("result_data"):
                             generate_dashboard_and_upload(
@@ -491,36 +537,36 @@ async def handle_pipeline_generation(
                     timeout=60
                 )
                 
-                # Format execution results
-                exec_parts = [f"\n*Execution Results* :white_check_mark:"]
-                
-                if execution_result["status"] == "success":
-                    exec_parts.append(f"*Status:* Success ({execution_result['execution_time']}s)")
-                    if execution_result.get("output"):
-                        output = execution_result["output"]
-                        # Truncate long outputs for Slack
-                        if len(output) > 1500:
-                            output = output[:1500] + "\n... (truncated)"
-                        exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
-                    if execution_result.get("result_data"):
-                        result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
-                        if len(result_json) > 1500:
-                            result_json = result_json[:1500] + "\n... (truncated)"
-                        exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
-                else:
-                    exec_parts.append(f"*Status:* Error ({execution_result['execution_time']}s)")
-                    if execution_result.get("error"):
-                        error = execution_result["error"]
-                        if len(error) > 1500:
-                            error = error[:1500] + "\n... (truncated)"
-                        exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
-                    if execution_result.get("output"):
-                        output = execution_result["output"]
-                        if len(output) > 500:
-                            output = output[:500] + "\n... (truncated)"
-                        exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
-                
-                say("\n".join(exec_parts))
+                if SHOW_EXECUTION_RESULTS_IN_SLACK:
+                    exec_parts = [f"\n*Execution Results* :white_check_mark:"]
+                    
+                    if execution_result["status"] == "success":
+                        exec_parts.append(f"*Status:* Success ({execution_result['execution_time']}s)")
+                        if execution_result.get("output"):
+                            output = execution_result["output"]
+                            # Truncate long outputs for Slack
+                            if len(output) > 1500:
+                                output = output[:1500] + "\n... (truncated)"
+                            exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                        if execution_result.get("result_data"):
+                            result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
+                            if len(result_json) > 1500:
+                                result_json = result_json[:1500] + "\n... (truncated)"
+                            exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
+                    else:
+                        exec_parts.append(f"*Status:* Error ({execution_result['execution_time']}s)")
+                        if execution_result.get("error"):
+                            error = execution_result["error"]
+                            if len(error) > 1500:
+                                error = error[:1500] + "\n... (truncated)"
+                            exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
+                        if execution_result.get("output"):
+                            output = execution_result["output"]
+                            if len(output) > 500:
+                                output = output[:500] + "\n... (truncated)"
+                            exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                    
+                    say("\n".join(exec_parts))
 
                 if wants_dashboard and channel_id and execution_result.get("result_data"):
                     generate_dashboard_and_upload(
@@ -585,24 +631,25 @@ async def handle_multi_source_pipeline_slack(
                     db_config=db_config,
                     timeout=60,
                 )
-                exec_parts = [f"\n*Execution Results* :white_check_mark:" if execution_result["status"] == "success" else "\n*Execution Results* :x:"]
-                exec_parts.append(f"*Status:* {execution_result['status'].capitalize()} ({execution_result['execution_time']}s)")
-                if execution_result.get("error"):
-                    error = execution_result["error"]
-                    if len(error) > 1500:
-                        error = error[:1500] + "\n... (truncated)"
-                    exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
-                if execution_result.get("output"):
-                    output = execution_result["output"]
-                    if len(output) > 1500:
-                        output = output[:1500] + "\n... (truncated)"
-                    exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
-                if execution_result.get("result_data"):
-                    result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
-                    if len(result_json) > 1500:
-                        result_json = result_json[:1500] + "\n... (truncated)"
-                    exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
-                say("\n".join(exec_parts))
+                if SHOW_EXECUTION_RESULTS_IN_SLACK:
+                    exec_parts = [f"\n*Execution Results* :white_check_mark:" if execution_result["status"] == "success" else "\n*Execution Results* :x:"]
+                    exec_parts.append(f"*Status:* {execution_result['status'].capitalize()} ({execution_result['execution_time']}s)")
+                    if execution_result.get("error"):
+                        error = execution_result["error"]
+                        if len(error) > 1500:
+                            error = error[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
+                    if execution_result.get("output"):
+                        output = execution_result["output"]
+                        if len(output) > 1500:
+                            output = output[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
+                    if execution_result.get("result_data"):
+                        result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
+                        if len(result_json) > 1500:
+                            result_json = result_json[:1500] + "\n... (truncated)"
+                        exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
+                    say("\n".join(exec_parts))
             except Exception as e:
                 say(f"*Execution Error:* {str(e)}")
     except Exception as e:
@@ -668,10 +715,14 @@ def generate_dashboard_and_upload(say, channel_id: str, description: str, result
             pass
 
 
-# Note: We intentionally do NOT register app_mention - when a user @mentions the bot,
-# Slack sends BOTH a message event AND an app_mention event. The message handler
-# already processes mentions (checks bot_mentioned), so handling app_mention would
-# cause commands to run twice.
+# Note: Slack sends BOTH a message event AND an app_mention event for mentions.
+# The message handler does the actual work. This no-op handler exists only to
+# prevent Slack from retrying unhandled app_mention events.
+
+
+@app.event("app_mention")
+def ignore_app_mention_events(body, logger):
+    logger.debug("Ignoring app_mention event %s because message listener already handled it.", body.get("event_id"))
 
 
 @app.event("file_shared")
