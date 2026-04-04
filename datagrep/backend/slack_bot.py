@@ -108,6 +108,32 @@ def format_code_block(code: str, language: str = "python") -> str:
     return f"```{language}\n{code}\n```"
 
 
+def format_execution_summary(execution_result: Dict[str, Any]) -> str:
+    """Format a concise execution summary for Slack."""
+    status = execution_result.get("status", "unknown")
+    execution_time = execution_result.get("execution_time", "n/a")
+    is_success = status == "success"
+
+    lines = [
+        f"\n*Execution Results* :white_check_mark:" if is_success else "\n*Execution Results* :x:",
+        f"*Status:* {status.capitalize()} ({execution_time}s)"
+    ]
+
+    if execution_result.get("error"):
+        error = execution_result["error"]
+        if len(error) > 1500:
+            error = error[:1500] + "\n... (truncated)"
+        lines.append(f"*Error:*\n{format_code_block(error, 'text')}")
+
+    if execution_result.get("result_data"):
+        result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
+        if len(result_json) > 1500:
+            result_json = result_json[:1500] + "\n... (truncated)"
+        lines.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
+
+    return "\n".join(lines)
+
+
 def format_schema_response(schema: Dict[str, Any]) -> str:
     """Format schema information for Slack"""
     lines = ["*Schema Information:*"]
