@@ -23,10 +23,6 @@ function App() {
       setError('Please upload a CSV file');
       return;
     }
-    if (sourceType === 'postgres' && !tableName.trim()) {
-      setError('Please enter a table name');
-      return;
-    }
 
     setLoading(true);
     setError(null);
@@ -49,9 +45,10 @@ function App() {
 
         setSchema(response.data.schema);
       } else {
-        const sourceConfig = {
-          table_name: tableName.trim(),
-        };
+        const sourceConfig = {};
+        if (tableName.trim()) {
+          sourceConfig.table_name = tableName.trim();
+        }
 
         if (process.env.REACT_APP_SUPABASE_URL) {
           sourceConfig.supabase_url = process.env.REACT_APP_SUPABASE_URL;
@@ -87,10 +84,6 @@ function App() {
       setError('Please upload a CSV file');
       return;
     }
-    if (sourceType === 'postgres' && !tableName.trim()) {
-      setError('Please enter a table name');
-      return;
-    }
 
     setLoading(true);
     setError(null);
@@ -116,9 +109,10 @@ function App() {
           }
         );
       } else {
-        const sourceConfig = {
-          table_name: tableName.trim(),
-        };
+        const sourceConfig = {};
+        if (tableName.trim()) {
+          sourceConfig.table_name = tableName.trim();
+        }
 
         if (process.env.REACT_APP_SUPABASE_URL) {
           sourceConfig.supabase_url = process.env.REACT_APP_SUPABASE_URL;
@@ -178,7 +172,7 @@ function App() {
       .slice(0, 40)
       .toLowerCase()
       .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9\-]/g, '') || 'pipeline';
+      .replace(/[^a-z0-9-]/g, '') || 'pipeline';
 
     const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -230,13 +224,13 @@ function App() {
 
             {sourceType === 'postgres' && (
               <div className="form-group">
-                <label htmlFor="tableName">Supabase Table Name</label>
+                <label htmlFor="tableName">Supabase Table Name (Optional)</label>
                 <input
                   id="tableName"
                   type="text"
                   value={tableName}
                   onChange={(e) => setTableName(e.target.value)}
-                  placeholder="e.g., employees"
+                  placeholder="e.g., orders (leave blank to use the full public schema)"
                   className="text-input"
                 />
               </div>
@@ -259,8 +253,7 @@ function App() {
                 onClick={inferSchema}
                 disabled={
                   loading ||
-                  (sourceType === 'csv' && !file) ||
-                  (sourceType === 'postgres' && !tableName.trim())
+                  (sourceType === 'csv' && !file)
                 }
                 className="btn btn-secondary"
               >
@@ -271,7 +264,7 @@ function App() {
                 disabled={
                   loading ||
                   !naturalLanguage.trim() ||
-                  (sourceType === 'postgres' && !tableName.trim())
+                  (sourceType === 'csv' && !file)
                 }
                 className="btn btn-primary"
               >

@@ -1,4 +1,5 @@
 """
+#edited by dhiren
 Pipeline Generator Service
 Uses OpenAI to generate data pipelines from natural language
 """
@@ -27,6 +28,206 @@ def get_openai_client() -> OpenAI:
     return OpenAI(api_key=api_key)
 
 
+def _has_relational_catalog(schema: Dict[str, Any]) -> bool:
+    return isinstance(schema.get("tables"), list) and len(schema.get("tables", [])) > 0
+
+
+def _table_columns_from_schema(schema: Dict[str, Any]) -> Dict[str, set]:
+    if not _has_relational_catalog(schema):
+        return {}
+    return {
+        table.get("name", ""): {column.get("name") for column in table.get("columns", [])}
+        for table in schema.get("tables", [])
+    }
+
+
+def _get_semantic_hints(schema: Dict[str, Any]) -> List[Dict[str, Any]]:
+    hints = schema.get("semantic_hints", [])
+    return hints if isinstance(hints, list) else []
+
+
+def _find_metric_hint(schema: Dict[str, Any], metric_name: str) -> Optional[Dict[str, Any]]:
+    for hint in _get_semantic_hints(schema):
+        if hint.get("metric") == metric_name:
+            return hint
+    return None
+
+
+def _is_total_revenue_request(natural_language: str) -> bool:
+    text = natural_language.lower()
+    if "gross revenue" in text or "gross sales" in text:
+        return False
+    if "total revenue" in text or "total sales" in text or "net revenue" in text:
+        return True
+    if "revenue" not in text and "sales" not in text:
+        return False
+
+    chart_terms = ["chart", "plot", "graph", "dashboard", "visualize", "visualization", "show"]
+    dimension_terms = [" by ", " per ", " over ", "trend", "daily", "weekly", "monthly", "quarterly", "yearly"]
+    return any(term in text for term in chart_terms) and not any(term in text for term in dimension_terms)
+
+
+def _is_average_order_value_by_product_request(natural_language: str) -> bool:
+    text = natural_language.lower()
+    aov_terms = ["average order value", "avg order value", "aov"]
+    product_terms = ["by product", "per product", "product-wise", "product wise"]
+    return any(term in text for term in aov_terms) and any(term in text for term in product_terms)
+
+
+def _build_total_revenue_query(schema: Dict[str, Any]) -> Optional[str]:
+    table_columns = _table_columns_from_schema(schema)
+    has_order_items_price = "price_usd" in table_columns.get("order_items", set())
+    has_order_item_refunds = "refund_amount_usd" in table_columns.get("order_item_refunds", set())
+    has_orders_price = "price_usd" in table_columns.get("orders", set())
+
+    if has_order_items_price and has_order_item_refunds:
+        return """
+WITH gross_sales AS (
+    SELECT COALESCE(SUM(price_usd), 0) AS gross_revenue_usd
+    FROM order_items
+),
+refunds AS (
+    SELECT COALESCE(SUM(refund_amount_usd), 0) AS refunded_revenue_usd
+    FROM order_item_refunds
+)
+SELECT
+    (gross_sales.gross_revenue_usd - refunds.refunded_revenue_usd) AS total_revenue_usd
+FROM gross_sales
+CROSS JOIN refunds
+""".strip()
+
+    if has_orders_price:
+        return """
+SELECT COALESCE(SUM(price_usd), 0) AS total_revenue_usd
+FROM orders
+""".strip()
+
+    return None
+
+
+def _build_average_order_value_by_product_query(schema: Dict[str, Any]) -> Optional[str]:
+    table_columns = _table_columns_from_schema(schema)
+    required_columns = [
+        ("orders", "order_id"),
+        ("orders", "price_usd"),
+        ("order_items", "order_id"),
+        ("order_items", "product_id"),
+        ("products", "product_id"),
+        ("products", "product_name"),
+    ]
+    if not all(column in table_columns.get(table, set()) for table, column in required_columns):
+        return None
+
+    return """
+WITH product_orders AS (
+    SELECT DISTINCT
+        oi.product_id,
+        o.order_id,
+        o.price_usd
+    FROM orders o
+    JOIN order_items oi ON o.order_id = oi.order_id
+    WHERE oi.product_id IS NOT NULL
+      AND o.price_usd IS NOT NULL
+)
+SELECT
+    p.product_name,
+    AVG(product_orders.price_usd) AS average_order_value_usd
+FROM product_orders
+JOIN products p ON product_orders.product_id = p.product_id
+GROUP BY p.product_name
+ORDER BY average_order_value_usd DESC, p.product_name
+""".strip()
+
+
+def _build_postgres_query_pipeline(
+    query: str,
+    description: str,
+    steps: List[str],
+) -> Dict[str, Any]:
+    code = f"""import json
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+conn = None
+cur = None
+
+try:
+    conn = psycopg2.connect(
+        host=os.getenv("POSTGRES_HOST"),
+        port=os.getenv("POSTGRES_PORT"),
+        dbname=os.getenv("POSTGRES_DB"),
+        user=os.getenv("POSTGRES_USER"),
+        password=os.getenv("POSTGRES_PASSWORD"),
+        sslmode="require",
+    )
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(\"\"\"{query}\"\"\")
+    rows = cur.fetchall()
+    print(json.dumps(rows, default=str))
+except Exception as e:
+    print(f"Error: {{e}}")
+finally:
+    if cur is not None:
+        cur.close()
+    if conn is not None:
+        conn.close()
+"""
+
+    return {
+        "code": code,
+        "language": "python",
+        "description": description,
+        "steps": steps,
+        "dependencies": ["psycopg2-binary"],
+        "source_type": "postgres",
+        "model_used": "semantic-rule",
+    }
+
+
+def _build_semantic_postgres_pipeline(
+    natural_language: str,
+    schema: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """
+    Use deterministic SQL for high-confidence metrics so chart requests do not
+    depend on an LLM guessing business logic from partial schema context.
+    """
+    if not _has_relational_catalog(schema):
+        return None
+
+    if _is_total_revenue_request(natural_language) and _find_metric_hint(schema, "total_revenue_usd"):
+        revenue_query = _build_total_revenue_query(schema)
+        if revenue_query:
+            return _build_postgres_query_pipeline(
+                query=revenue_query,
+                description="Deterministic total revenue pipeline generated from inferred relational schema",
+                steps=[
+                    "Infer multi-table PostgreSQL schema and semantic hints",
+                    "Use the ecommerce revenue definition grounded in order_items and refunds",
+                    "Return a single revenue metric suitable for chart generation",
+                ],
+            )
+
+    if (
+        _is_average_order_value_by_product_request(natural_language)
+        and _find_metric_hint(schema, "average_order_value_usd_by_product")
+    ):
+        average_order_value_query = _build_average_order_value_by_product_query(schema)
+        if average_order_value_query:
+            return _build_postgres_query_pipeline(
+                query=average_order_value_query,
+                description="Deterministic average order value by product pipeline generated from inferred relational schema",
+                steps=[
+                    "Infer multi-table PostgreSQL schema and semantic hints",
+                    "Deduplicate order-product pairs through order_items",
+                    "Average orders.price_usd by products.product_name for chart-ready output",
+                ],
+            )
+
+    return None
+
+
 async def generate_pipeline(
     natural_language: str,
     source_type: str,
@@ -47,6 +248,12 @@ async def generate_pipeline(
     Returns:
         Dictionary containing generated pipeline code and metadata
     """
+    semantic_pipeline = _build_semantic_postgres_pipeline(
+        natural_language=natural_language,
+        schema=schema,
+    )
+    if semantic_pipeline:
+        return semantic_pipeline
     
     # Build prompt for OpenAI
     prompt = _build_pipeline_prompt(
@@ -130,7 +337,7 @@ def _build_pipeline_prompt(
 ) -> str:
     """Build the prompt for OpenAI"""
     
-    schema_str = json.dumps(schema, indent=2)
+    schema_str = json.dumps(schema, indent=2, default=str)
     
     prompt = f"""Generate a data pipeline based on the following requirements:
 
@@ -143,12 +350,12 @@ SCHEMA:
 {schema_str}
 
 SOURCE CONFIG:
-{json.dumps(source_config, indent=2)}
+{json.dumps(source_config, indent=2, default=str)}
 
 """
     
     if transformations:
-        prompt += f"SPECIFIC TRANSFORMATIONS REQUESTED:\n{json.dumps(transformations, indent=2)}\n\n"
+        prompt += f"SPECIFIC TRANSFORMATIONS REQUESTED:\n{json.dumps(transformations, indent=2, default=str)}\n\n"
     
     if source_type == "csv":
         # Extract filename from source_config
@@ -180,6 +387,7 @@ IMPORTANT: Return ONLY the Python code directly. Do NOT wrap it in JSON or markd
 Just output the raw Python code that can be executed directly.
 """
     elif source_type == "postgres":
+        relational_catalog = _has_relational_catalog(schema)
         prompt += """Generate a Python pipeline (NOT raw SQL) that:
 1. Connects to PostgreSQL using psycopg2 with credentials from environment variables:
    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
@@ -201,6 +409,20 @@ Include in the generated code:
 
 IMPORTANT: Return ONLY the Python code directly. Do NOT wrap it in JSON or markdown code blocks.
 Just output raw executable Python.
+"""
+        if relational_catalog:
+            prompt += """
+
+The SCHEMA above is a relational catalog of multiple tables, not just one table.
+Follow these rules strictly:
+- Use ONLY the tables, columns, and foreign-key relationships listed in SCHEMA.
+- NEVER invent tables, columns, joins, or metrics.
+- If SCHEMA includes semantic_hints, treat them as the source of truth for ambiguous business terms.
+- If the user asks for revenue/sales and SCHEMA includes total_revenue_usd guidance, use that exact definition unless the user explicitly requests a different revenue definition.
+- If the user asks for average order value by product and SCHEMA includes average_order_value_usd_by_product guidance, use that exact definition and do not invent columns such as order_items.order_value.
+- If the request is for a chart/plot/graph/dashboard and no dimension is specified, return a single-row result with a clearly named metric column such as total_revenue_usd.
+- Prefer joins that follow the listed foreign-key relationships.
+- Do not use unrelated tables such as employees or departments for ecommerce metrics.
 """
     
     return prompt

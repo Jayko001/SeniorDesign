@@ -85,8 +85,17 @@ async def infer_schema(request: SchemaRequest):
             # For CSV, source_config should contain file_path or file_id
             schema = infer_schema_csv(request.source_config)
         elif request.source_type == "postgres":
-            # For PostgreSQL, source_config should contain connection details
-            schema = infer_schema_postgres(request.source_config)
+            # For PostgreSQL, source_config may optionally include a table name.
+            # If that table name is wrong, fall back to full-schema inference.
+            postgres_config = dict(request.source_config)
+            try:
+                schema = infer_schema_postgres(postgres_config)
+            except Exception:
+                if postgres_config.get("table_name"):
+                    postgres_config.pop("table_name", None)
+                    schema = infer_schema_postgres(postgres_config)
+                else:
+                    raise
         else:
             raise HTTPException(
                 status_code=400,
@@ -130,34 +139,40 @@ async def generate_pipeline_endpoint(request: PipelineRequest):
     try:
         # First, infer schema if not provided
         schema = None
+        pipeline_source_config = dict(request.source_config)
         if request.source_type == "csv":
             # Check if file_path exists, if not, raise error
-            file_path = request.source_config.get("file_path")
+            file_path = pipeline_source_config.get("file_path")
             if not file_path or not os.path.exists(file_path):
                 raise HTTPException(
                     status_code=400,
                     detail=f"CSV file not found. Please upload the file first using /api/pipeline/generate-csv endpoint."
                 )
-            schema = infer_schema_csv(request.source_config)
+            schema = infer_schema_csv(pipeline_source_config)
         elif request.source_type == "postgres":
-            table_name = request.source_config.get("table_name")
-            if table_name:
-                try:
-                    schema = infer_schema_postgres(request.source_config)
-                except Exception as e:
-                    # Best-effort schema; don't fail pipeline generation on schema inference issues
-                    print(f"[schema_inference_postgres] failed: {e}")
+            try:
+                schema = infer_schema_postgres(pipeline_source_config)
+            except Exception as e:
+                # Best-effort schema; don't fail pipeline generation on schema inference issues
+                print(f"[schema_inference_postgres] failed: {e}")
+                if pipeline_source_config.get("table_name"):
+                    fallback_config = dict(pipeline_source_config)
+                    fallback_config.pop("table_name", None)
+                    try:
+                        schema = infer_schema_postgres(fallback_config)
+                        pipeline_source_config = fallback_config
+                    except Exception as retry_error:
+                        print(f"[schema_inference_postgres_retry] failed: {retry_error}")
+                        schema = {}
+                else:
                     schema = {}
-            else:
-                # Skip schema inference when table name is unknown; let LLM rely on description
-                schema = {}
         
         # Generate pipeline using LLM
         pipeline = await generate_pipeline(
             natural_language=request.natural_language,
             source_type=request.source_type,
             schema=schema,
-            source_config=request.source_config,
+            source_config=pipeline_source_config,
             transformations=request.transformations
         )
         
@@ -254,33 +269,40 @@ async def generate_and_execute_pipeline(request: PipelineRequest):
         # First, infer schema
         schema = None
         file_paths = []
+        pipeline_source_config = dict(request.source_config)
         
         if request.source_type == "csv":
-            file_path = request.source_config.get("file_path")
+            file_path = pipeline_source_config.get("file_path")
             if not file_path or not os.path.exists(file_path):
                 raise HTTPException(
                     status_code=400,
                     detail=f"CSV file not found: {file_path}"
                 )
-            schema = infer_schema_csv(request.source_config)
+            schema = infer_schema_csv(pipeline_source_config)
             file_paths = [file_path]
         elif request.source_type == "postgres":
-            table_name = request.source_config.get("table_name")
-            if table_name:
-                try:
-                    schema = infer_schema_postgres(request.source_config)
-                except Exception as e:
-                    print(f"[schema_inference_postgres] failed: {e}")
+            try:
+                schema = infer_schema_postgres(pipeline_source_config)
+            except Exception as e:
+                print(f"[schema_inference_postgres] failed: {e}")
+                if pipeline_source_config.get("table_name"):
+                    fallback_config = dict(pipeline_source_config)
+                    fallback_config.pop("table_name", None)
+                    try:
+                        schema = infer_schema_postgres(fallback_config)
+                        pipeline_source_config = fallback_config
+                    except Exception as retry_error:
+                        print(f"[schema_inference_postgres_retry] failed: {retry_error}")
+                        schema = {}
+                else:
                     schema = {}
-            else:
-                schema = {}
         
         # Generate pipeline using LLM
         pipeline = await generate_pipeline(
             natural_language=request.natural_language,
             source_type=request.source_type,
             schema=schema,
-            source_config=request.source_config,
+            source_config=pipeline_source_config,
             transformations=request.transformations
         )
         
@@ -288,7 +310,7 @@ async def generate_and_execute_pipeline(request: PipelineRequest):
         execution_result = await execute_python_code(
             code=pipeline.get("code", ""),
             file_paths=file_paths if request.source_type == "csv" else None,
-            db_config=request.source_config if request.source_type == "postgres" else None,
+            db_config=pipeline_source_config if request.source_type == "postgres" else None,
             timeout=60
         )
         

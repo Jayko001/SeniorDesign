@@ -7,6 +7,7 @@ import os
 import tempfile
 import asyncio
 import concurrent.futures
+import re
 from typing import Dict, Any, Optional
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -21,8 +22,6 @@ from services.schema_inference import infer_schema_csv
 from services.pipeline_generator import generate_pipeline, generate_multi_source_pipeline
 from services.config_loader import load_pipeline_config
 from services.unified_schema import build_unified_schema
-from services.code_executor import execute_python_code
-from services.pipeline_generator import generate_pipeline
 from services.code_executor import execute_python_code, execute_python_code_with_output
 from services.visualization_generator import infer_visualization_spec, build_plot_code
 
@@ -82,7 +81,7 @@ def format_schema_response(schema: Dict[str, Any]) -> str:
     
     if "sample_rows" in schema and schema["sample_rows"]:
         lines.append("\n*Sample rows:*")
-        sample_json = json.dumps(schema["sample_rows"][:2], indent=2)
+        sample_json = json.dumps(schema["sample_rows"][:2], indent=2, default=str)
         lines.append(format_code_block(sample_json, "json"))
     
     return "\n".join(lines)
@@ -162,7 +161,10 @@ def find_csv_file(message: dict, channel_id: str) -> tuple:
 
 def wants_postgres(description: str) -> bool:
     """Heuristically detect postgres/supabase intent without requiring a CSV upload."""
-    keywords = ["postgres", "postgre", "supabase", "table", "database", "db", "sql"]
+    keywords = [
+        "postgres", "postgre", "supabase", "table", "database", "db", "sql",
+        "revenue", "sales", "refund", "orders", "products", "sessions", "pageviews"
+    ]
     return any(word in description.lower() for word in keywords)
 
 
@@ -172,14 +174,35 @@ def wants_dashboard(description: str) -> bool:
     return any(word in description.lower() for word in keywords)
 
 
+GENERIC_TABLE_TOKENS = {
+    "postgres", "postgre", "postgresql", "supabase", "database", "db", "sql",
+    "schema", "public", "table", "tables", "source", "data"
+}
+GENERIC_SOURCE_TOKENS = {"postgres", "postgre", "postgresql", "supabase", "database", "db", "sql"}
+TABLE_NAME_FILLERS = {"the", "a", "an", "public", "schema"}
+
+
+def _normalize_table_candidate(token: str) -> str:
+    candidate = token.strip().strip(",.;:()[]{}<>\"'`")
+    if candidate.startswith("public."):
+        candidate = candidate.split(".", 1)[1]
+    return candidate.lower()
+
+
 def extract_table_name(description: str) -> str:
     """Very lightweight table name extractor (looks for 'table <name>' or 'from <name>')."""
     tokens = description.lower().split()
     for i, tok in enumerate(tokens):
-        if tok == "table" and i + 1 < len(tokens):
-            return tokens[i + 1].strip(",.;")
-        if tok == "from" and i + 1 < len(tokens):
-            return tokens[i + 1].strip(",.;")
+        if tok not in {"table", "from"}:
+            continue
+        for offset, candidate_token in enumerate(tokens[i + 1:i + 5], start=1):
+            candidate = _normalize_table_candidate(candidate_token)
+            if not candidate or candidate in TABLE_NAME_FILLERS or candidate in GENERIC_TABLE_TOKENS:
+                if tok == "from" and offset == 1 and candidate in GENERIC_SOURCE_TOKENS:
+                    break
+                continue
+            if re.fullmatch(r"[a-z_][a-z0-9_]*", candidate):
+                return candidate
     return ""
 
 
@@ -338,7 +361,7 @@ def handle_message(message, say):
                 ]
                 if schema:
                     response_parts.append("\n*Schema (from Postgres/Supabase):*")
-                    response_parts.append(format_code_block(json.dumps(schema, indent=2), "json"))
+                    response_parts.append(format_code_block(json.dumps(schema, indent=2, default=str), "json"))
                 say("\n".join(response_parts))
 
                 # Auto-execute for Postgres as well
@@ -373,7 +396,7 @@ def handle_message(message, say):
                                 output = output[:1500] + "\n... (truncated)"
                             exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
                         if execution_result.get("result_data"):
-                            result_json = json.dumps(execution_result["result_data"], indent=2)
+                            result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
                             if len(result_json) > 1500:
                                 result_json = result_json[:1500] + "\n... (truncated)"
                             exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
@@ -417,7 +440,6 @@ def handle_message(message, say):
                     os.remove(csv_file_path)
         else:
             say("I didn't understand that. Type `help` for available commands.")
-
 
 async def handle_pipeline_generation(
     say,
@@ -481,7 +503,7 @@ async def handle_pipeline_generation(
                             output = output[:1500] + "\n... (truncated)"
                         exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
                     if execution_result.get("result_data"):
-                        result_json = json.dumps(execution_result["result_data"], indent=2)
+                        result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
                         if len(result_json) > 1500:
                             result_json = result_json[:1500] + "\n... (truncated)"
                         exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
@@ -563,25 +585,23 @@ async def handle_multi_source_pipeline_slack(
                     db_config=db_config,
                     timeout=60,
                 )
-                exec_parts = [
-                    f"\n*Execution Results* :white_check_mark:" if execution_result["status"] == "success" else "\n*Execution Results* :x:"
-                ]
+                exec_parts = [f"\n*Execution Results* :white_check_mark:" if execution_result["status"] == "success" else "\n*Execution Results* :x:"]
                 exec_parts.append(f"*Status:* {execution_result['status'].capitalize()} ({execution_result['execution_time']}s)")
                 if execution_result.get("error"):
-                    err = execution_result["error"]
-                    if len(err) > 1500:
-                        err = err[:1500] + "\n... (truncated)"
-                    exec_parts.append(f"*Error:*\n{format_code_block(err, 'text')}")
+                    error = execution_result["error"]
+                    if len(error) > 1500:
+                        error = error[:1500] + "\n... (truncated)"
+                    exec_parts.append(f"*Error:*\n{format_code_block(error, 'text')}")
                 if execution_result.get("output"):
-                    out = execution_result["output"]
-                    if len(out) > 1500:
-                        out = out[:1500] + "\n... (truncated)"
-                    exec_parts.append(f"*Output:*\n{format_code_block(out, 'text')}")
+                    output = execution_result["output"]
+                    if len(output) > 1500:
+                        output = output[:1500] + "\n... (truncated)"
+                    exec_parts.append(f"*Output:*\n{format_code_block(output, 'text')}")
                 if execution_result.get("result_data"):
-                    rj = json.dumps(execution_result["result_data"], indent=2)
-                    if len(rj) > 1500:
-                        rj = rj[:1500] + "\n... (truncated)"
-                    exec_parts.append(f"*Result Data:*\n{format_code_block(rj, 'json')}")
+                    result_json = json.dumps(execution_result["result_data"], indent=2, default=str)
+                    if len(result_json) > 1500:
+                        result_json = result_json[:1500] + "\n... (truncated)"
+                    exec_parts.append(f"*Result Data:*\n{format_code_block(result_json, 'json')}")
                 say("\n".join(exec_parts))
             except Exception as e:
                 say(f"*Execution Error:* {str(e)}")
