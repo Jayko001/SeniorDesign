@@ -23,6 +23,7 @@
   - [Effort Matrix](#effort-matrix)
 - [ABET Concerns Essay (Assignment #7)](#abet-concerns-essay-assignment-7)
 - [PPT Slideshow (includes ABET Concerns) (Assignment #8)](#ppt-slideshow-includes-abet-concerns-assignment-8)
+- [Final Expo Poster](#expo-poster)
 - [Self-Assessment Essays (Assignment #3)](#self-assessment-essays-assignment-3)
 - [Professional Biographies (Assignment #1)](#professional-biographies-assignment-1)
 - [Summary of Hours and Justification](#summary-of-hours-and-justification)
@@ -196,6 +197,12 @@ Datagrep helps non-technical stakeholders and data teams generate and maintain p
 ## PPT Slideshow (includes ABET Concerns) (Assignment #8)
 
 - [Shared/Assignment8.pdf](HW_assignments/Shared/Assignment8.pdf)
+
+---
+
+## Final Expo Poster
+
+- [Shared/SeniorDesignPoster.pdf](HW_assignments/Shared/SeniorDesignPoster.pdf)
 
 ---
 
