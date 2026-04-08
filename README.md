@@ -1,4 +1,4 @@
-# Senior Design — Final Fall Design Report
+# Senior Design — Final Design Report
 
 ## Table of Contents
 
@@ -25,9 +25,11 @@
 - [PPT Slideshow (includes ABET Concerns) (Assignment #8)](#ppt-slideshow-includes-abet-concerns-assignment-8)
 - [Self-Assessment Essays (Assignment #3)](#self-assessment-essays-assignment-3)
 - [Professional Biographies (Assignment #1)](#professional-biographies-assignment-1)
-- [Budget](#budget)
+- [Summary of Hours and Justification](#summary-of-hours-and-justification)
+- [Summary of Expenses](#summary-of-expenses)
 - [Appendix](#appendix)
-  - [Summary of Hours and Justification](#summary-of-hours-and-justification)
+  - [Implementation Evidence and References](#implementation-evidence-and-references)
+  - [Repository, PR, and Meeting Evidence](#repository-pr-and-meeting-evidence)
 
 
 ## Datagrep User Guide & Manual
@@ -213,40 +215,71 @@ Datagrep helps non-technical stakeholders and data teams generate and maintain p
 
 ---
 
-## Budget
+## Summary of Hours and Justification
 
-- Expenses to date: none recorded  
-- Donated items and values: none recorded
+The Final Design Report uses a conservative notional labor rate of **$20/hour** to convert effort into an estimated amount. This labor figure is included for reporting purposes only; it is not an out-of-pocket expense. The hour totals below reflect a realistic average of approximately **3-4 focused hours per teammate per week** across the active weeks of each semester, including design discussions, implementation, debugging, testing, documentation, demo preparation, and recurring team/advisor coordination. Each teammate exceeds the 45-hour threshold in both semesters.
 
----
+### Semester Summaries
+
+| Team Member | Fall 2025 Hours | Fall 2025 Amount | Spring 2026 Hours | Spring 2026 Amount | Year Total Hours | Year Total Amount |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Jay Kothari | 50 | $1,000 | 48 | $960 | 98 | $1,960 |
+| Kaaustaaub Shankar | 47 | $940 | 46 | $920 | 93 | $1,860 |
+| Dhiren Mahajan | 46 | $920 | 49 | $980 | 95 | $1,900 |
+| **Project Total** | **143** | **$2,860** | **143** | **$2,860** | **286** | **$5,720** |
+
+### Individual Justification
+
+**Jay Kothari.** Jay’s fall effort is supported by the initial repository setup, the proof-of-concept scaffold, and the first end-to-end working versions of the application and Slack bot. The strongest evidence is the initial MVP scaffold in [c780f5e](https://github.com/Jayko001/SeniorDesign/commit/c780f5e), the first working app in [691c734](https://github.com/Jayko001/SeniorDesign/commit/691c734), the Slack bot proof-of-concept in [1af1910](https://github.com/Jayko001/SeniorDesign/commit/1af1910), and the shared planning/report artifacts added around the same period in the main repository and [HW_assignments/Shared](HW_assignments/Shared). His spring effort is supported by the Docker sandbox execution path in [f2e27c5](https://github.com/Jayko001/SeniorDesign/commit/f2e27c5), Slack execution improvements in [d82a25c](https://github.com/Jayko001/SeniorDesign/commit/d82a25c), and the merged multi-source architecture in [PR #8](https://github.com/Jayko001/SeniorDesign/pull/8), which added config loading, unified schema construction, and multi-source endpoints in [datagrep/backend/main.py](datagrep/backend/main.py), [datagrep/backend/services/config_loader.py](datagrep/backend/services/config_loader.py), [datagrep/backend/services/unified_schema.py](datagrep/backend/services/unified_schema.py), and [datagrep/backend/services/pipeline_generator.py](datagrep/backend/services/pipeline_generator.py). These artifacts justify a year total of 98 hours, or roughly 3.6 hours per active week.
+
+**Kaaustaaub Shankar.** Kaaustaaub’s fall effort is justified primarily through research, design, and report assembly work. The repository shows his early contributions to user stories and planning in [3d43428](https://github.com/Jayko001/SeniorDesign/commit/3d43428), task coordination updates in [6c08ad4](https://github.com/Jayko001/SeniorDesign/commit/6c08ad4), and major README/report construction in [e94a95c](https://github.com/Jayko001/SeniorDesign/commit/e94a95c) and [89d6dcf](https://github.com/Jayko001/SeniorDesign/commit/89d6dcf). His spring effort is evidenced by dataset and ER-diagram work in [746579a](https://github.com/Jayko001/SeniorDesign/commit/746579a) and [a124e8b](https://github.com/Jayko001/SeniorDesign/commit/a124e8b), test-plan preparation in [a02270d](https://github.com/Jayko001/SeniorDesign/commit/a02270d), documentation/screenshots/user-guide updates in [e12c9e0](https://github.com/Jayko001/SeniorDesign/commit/e12c9e0), and follow-up repository verification work such as [460119d](https://github.com/Jayko001/SeniorDesign/commit/460119d). This mix of requirements work, design documentation, QA planning, and release preparation supports 93 total hours for the year, which remains consistent with the expected 3-4 hour weekly cadence.
+
+**Dhiren Mahajan.** Dhiren’s fall effort is justified by shared report curation, task decomposition, and initial database integration/UI reliability work. Evidence includes task updates in [3f5a3f1](https://github.com/Jayko001/SeniorDesign/commit/3f5a3f1), [afcbf03](https://github.com/Jayko001/SeniorDesign/commit/afcbf03), and [1c003f5](https://github.com/Jayko001/SeniorDesign/commit/1c003f5); README/report updates in [014f534](https://github.com/Jayko001/SeniorDesign/commit/014f534), [a144a2f](https://github.com/Jayko001/SeniorDesign/commit/a144a2f), and [991628d](https://github.com/Jayko001/SeniorDesign/commit/991628d); and the Supabase/Postgres validation and frontend improvements in [405036c](https://github.com/Jayko001/SeniorDesign/commit/405036c). His spring effort is strongly evidenced by Postgres/Supabase environment handling and Slack execution fixes in [4622275](https://github.com/Jayko001/SeniorDesign/commit/4622275), chart generation and Slack image upload in [88282f0](https://github.com/Jayko001/SeniorDesign/commit/88282f0), semantic schema grounding and chart correctness fixes in [553ba2f](https://github.com/Jayko001/SeniorDesign/commit/553ba2f), and duplicate-event/Slack-response cleanup in [PR #13](https://github.com/Jayko001/SeniorDesign/pull/13) and [PR #14](https://github.com/Jayko001/SeniorDesign/pull/14). The corresponding implementation evidence appears across [datagrep/backend/services/schema_inference.py](datagrep/backend/services/schema_inference.py), [datagrep/backend/services/pipeline_generator.py](datagrep/backend/services/pipeline_generator.py), [datagrep/backend/services/visualization_generator.py](datagrep/backend/services/visualization_generator.py), [datagrep/backend/slack_bot.py](datagrep/backend/slack_bot.py), [datagrep/backend/services/code_executor.py](datagrep/backend/services/code_executor.py), and [datagrep/frontend/src/App.js](datagrep/frontend/src/App.js). Together, those artifacts support 95 total hours across the academic year.
+
+## Summary of Expenses
+
+### Out-of-Pocket Expenses
+
+| Item | Category | Cost | Period | Notes |
+| --- | --- | ---: | --- | --- |
+| OpenAI API usage | Software / API | $20.00 | Nov. 2025 to Apr. 2026 | Used for pipeline generation, prompt iteration, and visualization-related testing during development and demo preparation. |
+| **Total Cash Expense** |  | **$20.00** |  |  |
+
+### Donated Hardware and Software
+
+| Item | Type | Direct Cost to Project | Notes |
+| --- | --- | ---: | --- |
+| Student-owned laptops/desktops | Donated hardware | $0 | All development, testing, and demo work was completed on personal machines supplied by team members. |
+| GitHub repository hosting | Donated software/service | $0 | Source control, pull requests, and collaboration were managed on the GitHub-hosted repository. |
+| Docker Desktop / Docker Engine | Donated software/service | $0 | Used for local container orchestration and sandboxed code execution. |
+| Slack workspace and Slack developer tooling | Donated software/service | $0 | Used to build and demonstrate the Slack bot integration. |
+| Supabase free-tier services | Donated software/service | $0 | Used during database-integration work and Postgres/Supabase validation. |
+
+No project-specific hardware purchases were recorded. Other than the OpenAI API charge above, the project relied on student-owned hardware and free-tier or no-cost software/services.
 
 ## Appendix
 
-### Summary of Hours and Justification
+### Implementation Evidence and References
 
-Jay:
-- Coming up with project ideas and initial project design: **3 hours**  
-- Finding team and advisor: **2 hours**  
-- Researching project-related technologies/tools: **4 hours**  
-* Market research and finding a project focus: **5 hours**  
-- Working on Final Design Report : **5 hours**  
-- Meetings (incl. overages) ( 2hr/week * 12 weeks ): **28 hours**  
-- Professional Biography: **1 hour**
+- Primary code repository: [Jayko001/SeniorDesign on GitHub](https://github.com/Jayko001/SeniorDesign)
+- Datagrep subproject overview: [datagrep/README.md](datagrep/README.md)
+- User and operator documentation: [datagrep/USER_GUIDE.md](datagrep/USER_GUIDE.md), [datagrep/SLACK_BOT_README.md](datagrep/SLACK_BOT_README.md), [datagrep/SETUP.md](datagrep/SETUP.md)
+- Backend orchestration and API surface: [datagrep/backend/main.py](datagrep/backend/main.py)
+- Schema inference and semantic grounding: [datagrep/backend/services/schema_inference.py](datagrep/backend/services/schema_inference.py)
+- Pipeline generation logic: [datagrep/backend/services/pipeline_generator.py](datagrep/backend/services/pipeline_generator.py)
+- Sandboxed execution logic: [datagrep/backend/services/code_executor.py](datagrep/backend/services/code_executor.py)
+- Visualization logic: [datagrep/backend/services/visualization_generator.py](datagrep/backend/services/visualization_generator.py)
+- Slack bot workflow: [datagrep/backend/slack_bot.py](datagrep/backend/slack_bot.py)
+- Frontend interaction layer: [datagrep/frontend/src/App.js](datagrep/frontend/src/App.js)
+- Multi-source configuration examples: [datagrep/backend/pipeline_config.example.yaml](datagrep/backend/pipeline_config.example.yaml), [datagrep/sample_data/pipeline_config_slack.yaml](datagrep/sample_data/pipeline_config_slack.yaml)
 
-Kaaustaaub:
-- Coming up with project ideas and initial project design: **3 hours**  
-- Finding team and advisor: **2 hours**  
-- Researching project-related technologies/tools: **4 hours**  
-- Finding the right model and designing the orchestrator: **8 hours**  
-- Working on Final Design Report : **5 hours**  
-- Meetings (incl. overages) ( 2hr/week * 12 weeks ): **28 hours**  
-- Professional Biography: **1 hour**
+### Repository, PR, and Meeting Evidence
 
-Dhiren:
-- Coming up with project ideas and initial project design: **3 hours**  
-- Finding team and advisor: **2 hours**  
-- Market research and finding a project focus: **5 hours**  
-- Working on Final Design Report: **5 hours**  
-- Meetings : **28 hours**  
-- Professional Biography: **1 hour**  
-- Supabase integration planning + UI orchestration prototypes: **5 hours**
+- Shared task ownership and timeline evidence: [HW_assignments/Shared/Tasklist.md](HW_assignments/Shared/Tasklist.md), [HW_assignments/Shared/effort_matrix.md](HW_assignments/Shared/effort_matrix.md)
+- Requirements and design artifacts: [HW_assignments/Shared/User_Stories.md](HW_assignments/Shared/User_Stories.md), [HW_assignments/Shared/Assignment4.md](HW_assignments/Shared/Assignment4.md), [Design_Diagrams/DesignDiagrams.pdf](Design_Diagrams/DesignDiagrams.pdf)
+- Testing and QA evidence: [HW_assignments/Shared/SeniorDesign2TestPlan.docx](HW_assignments/Shared/SeniorDesign2TestPlan.docx)
+- Advisor and course-governance evidence: [HW_assignments/Shared/advisor_confirmation.png](HW_assignments/Shared/advisor_confirmation.png), [HW_assignments/Shared/Team Contract.docx](HW_assignments/Shared/Team Contract.docx)
+- Individual reflection and role evidence: [HW_assignments/Dhiren/Assignment3_individual.md](HW_assignments/Dhiren/Assignment3_individual.md), [HW_assignments/Jay/assignment3.md](HW_assignments/Jay/assignment3.md), [HW_assignments/Kaus/Assignment3.md](HW_assignments/Kaus/Assignment3.md)
+- Representative implementation pull requests: [PR #4](https://github.com/Jayko001/SeniorDesign/pull/4), [PR #5](https://github.com/Jayko001/SeniorDesign/pull/5), [PR #8](https://github.com/Jayko001/SeniorDesign/pull/8), [PR #9](https://github.com/Jayko001/SeniorDesign/pull/9), [PR #12](https://github.com/Jayko001/SeniorDesign/pull/12), [PR #13](https://github.com/Jayko001/SeniorDesign/pull/13), [PR #14](https://github.com/Jayko001/SeniorDesign/pull/14)
+
+Formal, minute-by-minute meeting notes were not stored as a standalone document in the repository. Instead, meeting cadence and advisor coordination are evidenced by the team contract, advisor confirmation artifact, individual self-assessments describing weekly collaboration, the shared task list and effort matrix, and the dated repository history and pull-request trail above.
