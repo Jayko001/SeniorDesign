@@ -216,9 +216,15 @@ Datagrep helps non-technical stakeholders and data teams generate and maintain p
 
 ## Self-Assessment Essays (Assignment #3)
 
+### Senior Design 1
 - Kaaustaaub Shankar: [Kaus/Assignment3.md](HW_assignments/Kaus/Assignment3.md) (PDF copy: `Kaus/Assignment 3 for Senior Design.pdf`)
 - Dhiren Mahajan: [Dhiren/Assignment3_individual.md](HW_assignments/Dhiren/Assignment3_individual.md)
 - Jay Kothari: [Jay/assignment3.md](HW_assignments/Jay/assignment3.md)
+
+### Senior Design 2
+- Kaaustaaub Shankar: [Kaus/Assignment3.md](HW_assignments/Kaus/self2.md) (PDF copy: `Kaus/Assignment 3 for Senior Design.pdf`)
+- Dhiren Mahajan: [Dhiren/Assignment3_individual.md](HW_assignments/Dhiren/self2.md)
+- Jay Kothari: [Jay/assignment3.md](HW_assignments/Jay/self2.md)
 
 ---
 
@@ -273,6 +279,10 @@ The Final Design Report uses a conservative notional labor rate of **$20/hour** 
 No project-specific hardware purchases were recorded. Other than the OpenAI API charge above, the project relied on student-owned hardware and free-tier or no-cost software/services.
 
 ## Appendix
+
+- [UI Specification](HW_assignments/Shared/UI_specifications)
+- [Testing Plan and Results](HW_assignments/Shared/SeniorDesign2TestPlan.docx)
+
 
 ### Implementation Evidence and References
 
