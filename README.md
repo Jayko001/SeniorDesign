@@ -1,5 +1,7 @@
 # Senior Design — Final Design Report
 
+## Loom Demo link - https://urldefense.com/v3/__https://www.loom.com/share/6d361240584845d89aa2c6afe4b35e97__;!!BhjwFFcMtnnGIyY!0QjWhBqquox0bhx-flwBP4scUDcAQALDdyW7_2CDcOE_9-JcIYBuaOzVB6XgTKsZsjq3frNXGfzJonFyqUxzKoxVScQ$
+
 ## Table of Contents
 
 - [Datagrep User Guide & Manual](#datagrep-user-guide--manual)
